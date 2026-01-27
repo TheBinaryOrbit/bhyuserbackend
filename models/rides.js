@@ -21,7 +21,7 @@ const RideSchema = new mongoose.Schema({
         type: String,
         required: true,
         trim: true,
-        enum : ['HATCHBACK' , 'SEDAN' ,'ERTIGA' , 'SUV' , 'INNOVA' , 'INNOVA CRYSTA']
+        enum : ['HATCHBACK' , 'SEDAN' ,'ERTIGA' , 'SUV' , 'INNOVA' , 'INNOVA CRYSTA', 'AUTO', 'BIKE', 'MUV']
     },
     passangerCount : {
         type: Number,
@@ -53,8 +53,12 @@ const RideSchema = new mongoose.Schema({
         type: String,
         required: true,
         trim: true,
-        enum : ['PENDING' , 'ACCEPTED' ,'ONGOING' ,'COMPLETED' , 'CANCELLED'],
+        enum : ['PENDING' , 'ACCEPTED' ,'ONGOING' ,'COMPLETED' , 'CANCELLED', 'DEFAULTED'],
         default: 'PENDING'
+    },
+    defaultReason: {
+        type: String,
+        trim: true
     }
 })
 

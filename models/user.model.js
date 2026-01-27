@@ -36,8 +36,8 @@ const UserSchema = new mongoose.Schema({
   userType: {
     type: String,
     required: true,
-    enum: ['AGENT', 'OWNER', 'DRIVER'],
-    default: 'AGENT'
+    enum: ['OWNER'],  // User is always an OWNER who manages drivers and vehicles
+    default: 'OWNER'
   },
   aadharNumber: {
     type: String,
@@ -97,9 +97,46 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     required: true,
     default: true
-  }
+  },
+
+  // Online status and location for ride booking
+  isOnline: {
+    type: Boolean,
+    default: false
+  },
+  location: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      default: [0, 0]
+    }
+  },
+  lastLocation: {
+    latitude: { type: Number },
+    longitude: { type: Number },
+    updatedAt: { type: Date }
+  },
+  socketId: {
+    type: String,
+    default: null
+  },
+  availableVehicles: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vehicle'
+  }],
+  availableDrivers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Driver'
+  }]
 }, {
   timestamps: true
 });
 
-export const User = mongoose.model('user', UserSchema);
+// Create geospatial index for location-based queries
+UserSchema.index({ location: '2dsphere' });
+
+export const User = mongoose.model('User', UserSchema);

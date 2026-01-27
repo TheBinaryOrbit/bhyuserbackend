@@ -25,6 +25,31 @@ const CustomerSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
-})
+    location: {
+        type: {
+            type: String,
+            enum: ['Point'],
+            default: 'Point'
+        },
+        coordinates: {
+            type: [Number], // [longitude, latitude]
+            default: [0, 0]
+        }
+    },
+    lastLocation: {
+        latitude: { type: Number },
+        longitude: { type: Number },
+        updatedAt: { type: Date }
+    },
+    socketId: {
+        type: String,
+        default: null
+    }
+}, {
+    timestamps: true
+});
+
+// Create geospatial index for location-based queries
+CustomerSchema.index({ location: '2dsphere' });
 
 export const Customer = mongoose.model("Customer", CustomerSchema);

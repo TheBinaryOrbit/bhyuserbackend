@@ -62,7 +62,7 @@ const VehicleSchema = new mongoose.Schema({
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'user',
+        ref: 'User',
         required: true
     }
 }, 
@@ -70,4 +70,4 @@ const VehicleSchema = new mongoose.Schema({
 { strict: false }
 );
 
-export const Vehicle = mongoose.model('vehicle', VehicleSchema);
+export const Vehicle = mongoose.model('Vehicle', VehicleSchema);

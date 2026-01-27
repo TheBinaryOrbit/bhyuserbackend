@@ -1,0 +1,332 @@
+{
+  "info": {
+    "name": "Ride Booking System API",
+    "description": "Complete API collection for testing the ride booking system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Rides",
+      "item": [
+        {
+          "name": "Create Ride",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": \"Airport\",\n  \"from\": \"Hotel Downtown\",\n  \"pickUpDateTime\": \"2026-01-22T10:00:00\",\n  \"vehicleType\": \"SEDAN\",\n  \"passangerCount\": 2,\n  \"fare\": 500,\n  \"rideType\": \"QUICKRIDE\",\n  \"bookedBy\": \"{{customer_id}}\",\n  \"customerLocation\": {\n    \"latitude\": 12.9716,\n    \"longitude\": 77.5946\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/rides",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides"]
+            }
+          }
+        },
+        {
+          "name": "Get Ride by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rides/{{ride_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides", "{{ride_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get All Rides",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rides?rideStatus=PENDING",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides"],
+              "query": [{"key": "rideStatus", "value": "PENDING"}]
+            }
+          }
+        },
+        {
+          "name": "Get Rides by Customer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rides/customer/{{customer_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides", "customer", "{{customer_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Ride Fare",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fare\": 600\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/rides/{{ride_id}}/fare",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides", "{{ride_id}}", "fare"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Ride",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rides/{{ride_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides", "{{ride_id}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "Start Ride",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rides/{{ride_id}}/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides", "{{ride_id}}", "start"]
+            }
+          }
+        },
+        {
+          "name": "Complete Ride",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rides/{{ride_id}}/complete",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides", "{{ride_id}}", "complete"]
+            }
+          }
+        },
+        {
+          "name": "Get Pending Rides",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rides/pending/all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides", "pending", "all"]
+            }
+          }
+        },
+        {
+          "name": "Get Ride Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rides/statistics/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rides", "statistics", "summary"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Requests",
+      "item": [
+        {
+          "name": "Create Request",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driver\": \"{{driver_id}}\",\n  \"vehicle\": \"{{vehicle_id}}\",\n  \"requestRaisedBy\": \"{{user_id}}\",\n  \"requestedFor\": \"{{ride_id}}\",\n  \"fare\": 500,\n  \"requestStatus\": \"PENDING\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/requests",
+              "host": ["{{base_url}}"],
+              "path": ["api", "requests"]
+            }
+          }
+        },
+        {
+          "name": "Get Request by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/requests/{{request_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "requests", "{{request_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Requests by Ride",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/requests/ride/{{ride_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "requests", "ride", "{{ride_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Approve Request",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/requests/{{request_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "requests", "{{request_id}}", "approve"]
+            }
+          }
+        },
+        {
+          "name": "Decline Request",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Not suitable for this ride\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/requests/{{request_id}}/decline",
+              "host": ["{{base_url}}"],
+              "path": ["api", "requests", "{{request_id}}", "decline"]
+            }
+          }
+        },
+        {
+          "name": "Get Pending Requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/requests/pending/all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "requests", "pending", "all"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users & Location",
+      "item": [
+        {
+          "name": "Update User Status",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isOnline\": true,\n  \"socketId\": \"socket-id-here\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/{{user_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "{{user_id}}", "status"]
+            }
+          }
+        },
+        {
+          "name": "Update User Location",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 12.9716,\n  \"longitude\": 77.5946\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/{{user_id}}/location",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "{{user_id}}", "location"]
+            }
+          }
+        },
+        {
+          "name": "Find Nearby Drivers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/users/nearby?latitude=12.9716&longitude=77.5946&radius=10&vehicleType=SEDAN",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "nearby"],
+              "query": [
+                {"key": "latitude", "value": "12.9716"},
+                {"key": "longitude", "value": "77.5946"},
+                {"key": "radius", "value": "10"},
+                {"key": "vehicleType", "value": "SEDAN"}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "customer_id",
+      "value": "CUSTOMER_OBJECT_ID",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "USER_OBJECT_ID",
+      "type": "string"
+    },
+    {
+      "key": "driver_id",
+      "value": "DRIVER_OBJECT_ID",
+      "type": "string"
+    },
+    {
+      "key": "vehicle_id",
+      "value": "VEHICLE_OBJECT_ID",
+      "type": "string"
+    },
+    {
+      "key": "ride_id",
+      "value": "RIDE_OBJECT_ID",
+      "type": "string"
+    },
+    {
+      "key": "request_id",
+      "value": "REQUEST_OBJECT_ID",
+      "type": "string"
+    }
+  ]
+}

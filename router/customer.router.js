@@ -12,4 +12,4 @@ customerRouter.post("/create-user", createUser);
 customerRouter.use(verifyTokenMiddleware);
 customerRouter.get("/profile/:customerId", getCustomerProfile);
 
-
+export default customerRouter;

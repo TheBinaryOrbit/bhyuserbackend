@@ -1,4 +1,4 @@
-import { verifyToken } from "../config/jwt.config";
+import { verifyToken } from "../config/jwt.config.js";
 
 
 const verifyTokenMiddleware = (req, res, next) => {
