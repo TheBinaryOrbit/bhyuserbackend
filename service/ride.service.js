@@ -612,3 +612,49 @@ export const getActiveRidesForTimeout = async () => {
         throw new Error(`Error fetching active rides: ${error.message}`);
     }
 };
+
+/**
+ * Get customer ride history by status
+ * @param {String} customerId - The customer ID
+ * @param {String} status - The ride status (optional)
+ * @returns {Promise<Array>} List of rides
+ */
+export const getCustomerRideHistory = async (customerId, status = null) => {
+    try {
+        const query = { bookedBy: customerId };
+        
+        if (status) {
+            query.rideStatus = status;
+        }
+        
+        const rides = await Ride.find(query)
+            .populate('bookedBy', 'name email phoneNumber')
+            .populate('assingTo', 'name phoneNumber')
+            .sort({ pickUpDateTime: -1 });
+        
+        return rides;
+    } catch (error) {
+        throw new Error(`Error fetching ride history: ${error.message}`);
+    }
+};
+
+/**
+ * Get customer active rides (PENDING, ACCEPTED, ONGOING)
+ * @param {String} customerId - The customer ID
+ * @returns {Promise<Array>} List of active rides
+ */
+export const getCustomerActiveRides = async (customerId) => {
+    try {
+        const rides = await Ride.find({
+            bookedBy: customerId,
+            rideStatus: { $in: ['PENDING', 'ACCEPTED', 'ONGOING'] }
+        })
+            .populate('bookedBy', 'name email phoneNumber')
+            .populate('assingTo', 'name phoneNumber')
+            .sort({ pickUpDateTime: -1 });
+        
+        return rides;
+    } catch (error) {
+        throw new Error(`Error fetching active rides: ${error.message}`);
+    }
+};

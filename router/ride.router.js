@@ -17,7 +17,9 @@ import {
     updateUserOnlineStatusController,
     updateUserLocationController,
     findNearbyOnlineUsersController,
-    updateRideFareController
+    updateRideFareController,
+    getCustomerRideHistoryController,
+    getCustomerActiveRidesController
 } from '../controllers/ride.controller.js';
 import {
     createRequestController,
@@ -143,6 +145,21 @@ router.put('/rides/:rideId/complete', completeRideController);
  * @access  Private (Driver)
  */
 router.put('/rides/:rideId/start', startRideController);
+
+/**
+ * @route   GET /api/rides/customer/:customerId/history
+ * @desc    Get customer ride history with optional status filter
+ * @query   status (optional) - PENDING, ACCEPTED, ONGOING, COMPLETED, CANCELLED, DEFAULTED
+ * @access  Private (Customer)
+ */
+router.get('/rides/customer/:customerId/history', getCustomerRideHistoryController);
+
+/**
+ * @route   GET /api/rides/customer/:customerId/active
+ * @desc    Get customer active rides (PENDING, ACCEPTED, ONGOING)
+ * @access  Private (Customer)
+ */
+router.get('/rides/customer/:customerId/active', getCustomerActiveRidesController);
 
 /**
  * @route   DELETE /api/rides/:rideId

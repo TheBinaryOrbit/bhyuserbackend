@@ -20,6 +20,9 @@ import {
 } from '../service/ride.service.js';
 import { sendSuccess, sendError } from '../utils/responseHelper.js';
 
+// Import new functions
+import { getCustomerRideHistory, getCustomerActiveRides } from '../service/ride.service.js';
+
 /**
  * Create a new ride
  */
@@ -336,5 +339,42 @@ export const updateRideFareController = async (req, res) => {
         sendSuccess(res, 200, 'Ride fare updated successfully', { ride });
     } catch (error) {
         sendError(res, error.message.includes('not found') ? 404 : 400, error.message);
+    }
+};
+
+/**
+ * Get customer ride history by status
+ */
+export const getCustomerRideHistoryController = async (req, res) => {
+    try {
+        const { customerId } = req.params;
+        const { status } = req.query;
+
+        const rides = await getCustomerRideHistory(customerId, status);
+
+        sendSuccess(res, 200, 'Ride history fetched successfully', { 
+            count: rides.length,
+            rides 
+        });
+    } catch (error) {
+        sendError(res, 500, error.message);
+    }
+};
+
+/**
+ * Get customer active rides
+ */
+export const getCustomerActiveRidesController = async (req, res) => {
+    try {
+        const { customerId } = req.params;
+
+        const rides = await getCustomerActiveRides(customerId);
+
+        sendSuccess(res, 200, 'Active rides fetched successfully', { 
+            count: rides.length,
+            rides 
+        });
+    } catch (error) {
+        sendError(res, 500, error.message);
     }
 };
