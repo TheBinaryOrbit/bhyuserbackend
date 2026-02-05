@@ -10,17 +10,17 @@ export const GetOTP = async (req, res) => {
             return res.status(400).json({ error: "Phone number is required." });
         }
 
-        const OTPStatus = await sendOTP(phoneNumber);
+        // const OTPStatus = await sendOTP(phoneNumber);
 
-        console.log("OTP Status:", OTPStatus);
+        // console.log("OTP Status:", OTPStatus);
 
-        if (!OTPStatus.status) {
-            return res.status(503).json({ error: "Failed to send OTP. Service unavailable." });
-        }
+        // if (!OTPStatus.status) {
+        //     return res.status(503).json({ error: "Failed to send OTP. Service unavailable." });
+        // }
 
         return res.status(200).json({
             message: "OTP sent successfully.",
-            sessionId: OTPStatus.sessionId || "mock-session-id", // Replace with real sessionId if using a service
+            sessionId: "mock-session-id", // Replace with real sessionId if using a service
         });
     } catch (error) {
         console.error("GetOTP Error:", error);
@@ -43,16 +43,20 @@ export const verifyOTP = async (req, res) => {
         }
 
 
-        const OTPStatus = await verifyOTPWithPhoneNumber(phoneNumber, OTP, sessionId);
+        // const OTPStatus = await verifyOTPWithPhoneNumber(phoneNumber, OTP, sessionId);
 
-        if (!OTPStatus) {
+        if (OTP !== "123456") { // Mock verification for demonstration
             return res.status(400).json({ error: "Invalid or expired OTP." });
         }
 
         const customer = await Customer.findOne({ phoneNumber: phoneNumber });
 
         if (!customer) {
-            return res.status(404).json({ error: "User not found. Please register first." });
+            return res.status(200).json({
+                message: "OTP verified successfully.",
+                userStatus: 404,
+            });
+    
         }
 
         await Customer.findOneAndUpdate(
@@ -65,20 +69,20 @@ export const verifyOTP = async (req, res) => {
             { new: true }
         )
 
-        return res.status(200).json({
-            message: "OTP verified successfully.",
-            userStatus: 200,
-            user: {
-                id: customer._id,
-                name: customer.name,
-                phoneNumber: customer.phoneNumber,
-                token: generateToken({ id: customer._id, phoneNumber: customer.phoneNumber })
-            }
-        });
-    } catch (error) {
-        console.error("verifyOTP Error:", error);
-        return res.status(500).json({ error: "Internal Server Error" });
-    }
+    return res.status(200).json({
+        message: "OTP verified successfully.",
+        userStatus: 200,
+        user: {
+            id: customer._id,
+            name: customer.name,
+            phoneNumber: customer.phoneNumber,
+            token: generateToken({ id: customer._id, phoneNumber: customer.phoneNumber })
+        }
+    });
+} catch (error) {
+    console.error("verifyOTP Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+}
 };
 
 
@@ -129,7 +133,7 @@ export const createUser = async (req, res) => {
 export const getCustomerProfile = async (req, res) => {
     try {
         const cust = req.customer;
-        
+
         const customer = await Customer.findById(cust.id);
 
         if (!customer) {

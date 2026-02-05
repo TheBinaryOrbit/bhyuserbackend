@@ -6,6 +6,7 @@ import { connectDB } from './config/dbConnection.js';
 import { initializeSocket } from './config/socket.config.js';
 import rideRouter from './router/ride.router.js';
 import customerRouter from './router/customer.router.js';
+import quickrideRouter from './router/quickride.router.js';
 
 // Import models to register schemas (must be done before any database operations)
 import './models/user.model.js';
@@ -43,7 +44,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // API Routes
 app.use('/api', rideRouter);
-app.use('/api/customers', customerRouter);
+app.use('/api/customer', customerRouter);
+app.use('/api/quickride', quickrideRouter);
 
 // Health check route
 app.get('/health', (req, res) => {
