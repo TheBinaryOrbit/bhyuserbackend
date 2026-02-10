@@ -2,6 +2,7 @@ import { Ride } from "../models/rides.js";
 import { User } from "../models/user.model.js";
 import { Driver } from "../models/driver.model.js";
 import { Vehicle } from "../models/vehicle.model.js";
+import { Request } from "../models/requests.model.js";
 
 /**
  * Calculate distance between two coordinates using Haversine formula
@@ -366,9 +367,9 @@ export const updateRide = async (rideId, updateData) => {
 };
 
 /**
- * Cancel a ride
+ * Cancel a ride and decline all associated requests
  * @param {String} rideId - The ride ID
- * @returns {Promise<Object>} Cancelled ride
+ * @returns {Promise<Object>} Cancelled ride with declined requests info
  */
 export const cancelRide = async (rideId) => {
     try {
@@ -385,7 +386,24 @@ export const cancelRide = async (rideId) => {
         ride.rideStatus = 'CANCELLED';
         await ride.save();
         
-        return await ride.populate(['bookedBy', 'assingTo']);
+        // Decline all pending and approved requests associated with this ride
+        const declineResult = await Request.updateMany(
+            { 
+                requestedFor: rideId,
+                requestStatus: { $in: ['PENDING', 'APPROVED'] }
+            },
+            { 
+                requestStatus: 'DECLINED',
+                declineReason: 'Ride was cancelled by user'
+            }
+        );
+        
+        const populatedRide = await ride.populate(['bookedBy', 'assingTo']);
+        
+        return {
+            ride: populatedRide,
+            declinedRequestsCount: declineResult.modifiedCount
+        };
     } catch (error) {
         throw new Error(`Error cancelling ride: ${error.message}`);
     }
@@ -411,6 +429,17 @@ export const completeRide = async (rideId) => {
         ride.rideStatus = 'COMPLETED';
         await ride.save();
         
+        // Mark the approved request as completed
+        await Request.updateMany(
+            { 
+                requestedFor: rideId, 
+                requestStatus: 'APPROVED' 
+            },
+            { 
+                requestStatus: 'COMPLETED' 
+            }
+        );
+        
         return await ride.populate(['bookedBy', 'assingTo']);
     } catch (error) {
         throw new Error(`Error completing ride: ${error.message}`);
@@ -418,13 +447,15 @@ export const completeRide = async (rideId) => {
 };
 
 /**
- * Start a ride
+ * Start a ride with OTP verification
  * @param {String} rideId - The ride ID
+ * @param {String} otp - The OTP for verification
  * @returns {Promise<Object>} Started ride
  */
-export const startRide = async (rideId) => {
+export const startRide = async (rideId, otp) => {
     try {
-        const ride = await Ride.findById(rideId);
+        // Fetch ride with OTP fields (they are select: false by default)
+        const ride = await Ride.findById(rideId).select('+startOtp +startOtpExpiresAt');
         
         if (!ride) {
             throw new Error('Ride not found');
@@ -434,7 +465,30 @@ export const startRide = async (rideId) => {
             throw new Error('Only accepted rides can be started');
         }
         
+        // Verify OTP
+        if (!ride.startOtp) {
+            throw new Error('No OTP generated for this ride');
+        }
+        
+        if (!otp) {
+            throw new Error('OTP is required to start the ride');
+        }
+        
+        if (ride.startOtp !== otp) {
+            throw new Error('Invalid OTP');
+        }
+        
+        if (new Date() > ride.startOtpExpiresAt) {
+            throw new Error('OTP has expired');
+        }
+        
+        // OTP verified, start the ride
         ride.rideStatus = 'ONGOING';
+        
+        // Clear OTP after successful verification
+        ride.startOtp = undefined;
+        ride.startOtpExpiresAt = undefined;
+        
         await ride.save();
         
         return await ride.populate(['bookedBy', 'assingTo']);

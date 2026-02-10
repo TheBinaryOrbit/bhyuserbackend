@@ -34,6 +34,11 @@ const RideSchema = new mongoose.Schema({
         required: true,
         min: 0
     },
+    estimatedDistance: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
     rideType : {
         type: String,
         required: true,
@@ -59,6 +64,14 @@ const RideSchema = new mongoose.Schema({
     defaultReason: {
         type: String,
         trim: true
+    },
+    startOtp: {
+        type: String,
+        select: false  // Don't include in queries by default for security
+    },
+    startOtpExpiresAt: {
+        type: Date,
+        select: false
     }
 })
 

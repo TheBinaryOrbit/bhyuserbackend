@@ -170,9 +170,9 @@ export const updateRideController = async (req, res) => {
 export const cancelRideController = async (req, res) => {
     try {
         const { rideId } = req.params;
-        const ride = await cancelRide(rideId);
+        const result = await cancelRide(rideId);
 
-        sendSuccess(res, 200, 'Ride cancelled successfully', { ride });
+        sendSuccess(res, 200, 'Ride cancelled successfully. All related requests have been declined.', result);
     } catch (error) {
         sendError(res, error.message.includes('not found') ? 404 : 400, error.message);
     }
@@ -198,7 +198,14 @@ export const completeRideController = async (req, res) => {
 export const startRideController = async (req, res) => {
     try {
         const { rideId } = req.params;
-        const ride = await startRide(rideId);
+        const { otp } = req.body;
+        
+        // Validate OTP is provided
+        if (!otp) {
+            return sendError(res, 400, 'OTP is required to start the ride');
+        }
+        
+        const ride = await startRide(rideId, otp);
 
         sendSuccess(res, 200, 'Ride started successfully', { ride });
     } catch (error) {

@@ -39,7 +39,9 @@ import {
     hasDriverPendingRequestController,
     getRequestStatisticsController,
     bulkApproveRequestsController,
-    bulkDeclineRequestsController
+    bulkDeclineRequestsController,
+    getActiveRequestsByUserController,
+    checkUserActiveRequestController
 } from '../controllers/request.controller.js';
 
 const router = express.Router();
@@ -141,7 +143,8 @@ router.put('/rides/:rideId/complete', completeRideController);
 
 /**
  * @route   PUT /api/rides/:rideId/start
- * @desc    Start ride
+ * @desc    Start ride with OTP verification
+ * @body    { otp: String (4-digit OTP) }
  * @access  Private (Driver)
  */
 router.put('/rides/:rideId/start', startRideController);
@@ -229,6 +232,20 @@ router.get('/requests/driver/:driverId', getRequestsByDriverController);
  * @access  Private
  */
 router.get('/requests/user/:userId', getRequestsByUserController);
+
+/**
+ * @route   GET /api/requests/user/:userId/active
+ * @desc    Get active requests by user (PENDING or APPROVED)
+ * @access  Private
+ */
+router.get('/requests/user/:userId/active', getActiveRequestsByUserController);
+
+/**
+ * @route   GET /api/requests/user/:userId/check-active
+ * @desc    Check if user has any active requests
+ * @access  Private
+ */
+router.get('/requests/user/:userId/check-active', checkUserActiveRequestController);
 
 /**
  * @route   GET /api/requests/ride/:rideId

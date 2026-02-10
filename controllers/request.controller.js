@@ -8,6 +8,7 @@ import {
     updateRequestStatus,
     approveRequest,
     declineRequest,
+    cancelRequest,
     completeRequest,
     updateRequest,
     deleteRequest,
@@ -16,7 +17,9 @@ import {
     hasDriverPendingRequest,
     getRequestStatistics,
     bulkApproveRequests,
-    bulkDeclineRequests
+    bulkDeclineRequests,
+    getActiveRequestsByUser,
+    hasUserActiveRequest
 } from '../service/request.service.js';
 import { sendSuccess, sendError } from '../utils/responseHelper.js';
 
@@ -30,6 +33,10 @@ export const createRequestController = async (req, res) => {
 
         sendSuccess(res, 201, 'Request created successfully', { request });
     } catch (error) {
+        // Check if it's a validation error (active request exists)
+        if (error.message.includes('already have an active request')) {
+            return sendError(res, 400, error.message);
+        }
         sendError(res, 500, error.message);
     }
 };
@@ -166,9 +173,25 @@ export const declineRequestController = async (req, res) => {
         const { requestId } = req.params;
         const { reason } = req.body;
 
-        const request = await declineRequest(requestId, reason);
+        const result = await declineRequest(requestId, reason);
 
-        sendSuccess(res, 200, 'Request declined successfully', { request });
+        sendSuccess(res, 200, 'Request declined successfully', result);
+    } catch (error) {
+        sendError(res, error.message.includes('not found') ? 404 : 400, error.message);
+    }
+};
+
+/**
+ * Cancel request (declines all requests for the ride)
+ */
+export const cancelRequestController = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { reason } = req.body;
+
+        const result = await cancelRequest(requestId, reason);
+
+        sendSuccess(res, 200, 'Request cancelled successfully. All related requests have been declined.', result);
     } catch (error) {
         sendError(res, error.message.includes('not found') ? 404 : 400, error.message);
     }
@@ -315,3 +338,37 @@ export const bulkDeclineRequestsController = async (req, res) => {
         sendError(res, 500, error.message);
     }
 };
+
+/**
+ * Get active requests by user (PENDING or APPROVED)
+ */
+export const getActiveRequestsByUserController = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const requests = await getActiveRequestsByUser(userId);
+
+        sendSuccess(res, 200, 'Active user requests fetched successfully', { 
+            count: requests.length,
+            hasActiveRequests: requests.length > 0,
+            requests 
+        });
+    } catch (error) {
+        sendError(res, 500, error.message);
+    }
+};
+
+/**
+ * Check if user has any active requests
+ */
+export const checkUserActiveRequestController = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const hasActiveRequest = await hasUserActiveRequest(userId);
+
+        sendSuccess(res, 200, 'Active request check completed', { 
+            hasActiveRequests: hasActiveRequest
+        });
+    } catch (error) {
+        sendError(res, 500, error.message);
+    }
+};;

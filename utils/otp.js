@@ -51,3 +51,17 @@ export const verifyOTPWithPhoneNumber = async (phoneNumber, OTP, sessionId) => {
     return false;
   }
 };
+
+/**
+ * Generate a random OTP for ride start verification
+ * @param {Number} length - Length of OTP (default: 4)
+ * @returns {String} Generated OTP
+ */
+export const generateRideOTP = (length = 4) => {
+  const digits = '0123456789';
+  let otp = '';
+  for (let i = 0; i < length; i++) {
+    otp += digits[Math.floor(Math.random() * 10)];
+  }
+  return otp;
+};

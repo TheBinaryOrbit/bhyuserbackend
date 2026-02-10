@@ -1,0 +1,1815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Testing Interface - Ride Booking</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-around;
+            padding: 15px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #dc3545;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #28a745;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .section {
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #dee2e6;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .console {
+            grid-column: 1 / -1;
+            background: #212529;
+            color: #00ff00;
+            padding: 20px;
+            border-radius: 10px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .console-line {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid transparent;
+        }
+
+        .console-line.success {
+            border-left-color: #28a745;
+            color: #28a745;
+        }
+
+        .console-line.error {
+            border-left-color: #dc3545;
+            color: #dc3545;
+        }
+
+        .console-line.warning {
+            border-left-color: #ffc107;
+            color: #ffc107;
+        }
+
+        .console-line.info {
+            border-left-color: #17a2b8;
+            color: #17a2b8;
+        }
+
+        .tab-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: #e9ecef;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            max-width: 350px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .notification h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .notification button {
+            margin-top: 10px;
+        }
+
+        .preset-ids {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 12px;
+        }
+
+        .preset-ids strong {
+            display: block;
+            color: #856404;
+            margin-bottom: 5px;
+        }
+
+        .preset-ids code {
+            background: #fff;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚗 Ride Booking - WebSocket Testing Interface</h1>
+            <p>Test all Socket.IO events for Customer and Driver workflows</p>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-indicator" id="connectionStatus"></div>
+                <span><strong>Connection:</strong> <span id="connectionText">Disconnected</span></span>
+            </div>
+            <div class="status-item">
+                <span><strong>Socket ID:</strong> <span id="socketId">-</span></span>
+            </div>
+            <div class="status-item">
+                <span><strong>User Type:</strong> <span id="userType">None</span></span>
+            </div>
+            <div class="status-item">
+                <span><strong>Status:</strong> <span id="onlineStatus">Offline</span></span>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Connection Section -->
+            <div class="section">
+                <h2>⚡ Connection</h2>
+                <div class="form-group">
+                    <label>Server URL</label>
+                    <input type="text" id="serverUrl" value="https://2q766kvz-5000.inc1.devtunnels.ms">
+                </div>
+                <button class="btn btn-primary" onclick="connectSocket()">Connect</button>
+                <button class="btn btn-danger" onclick="disconnectSocket()">Disconnect</button>
+            </div>
+
+            <!-- Authentication Section -->
+            <div class="section">
+                <h2>🔐 Authentication</h2>
+                <div class="preset-ids">
+                    <strong>📋 Preset Test IDs (Click to use):</strong>
+                    <div style="margin-top: 5px;">
+                        <strong>Customer:</strong> <code onclick="document.getElementById('customerId').value = this.innerText" style="cursor: pointer;">69721da7c481eb76c9734f59</code><br>
+                        <strong>User:</strong> <code onclick="document.getElementById('userId').value = this.innerText" style="cursor: pointer;">687195fad2d156c769a36458</code><br>
+                        <strong>Driver:</strong> <code onclick="document.getElementById('driverId').value = this.innerText" style="cursor: pointer;">68ab7ecab95d26d8b25951cc</code><br>
+                        <strong>Vehicle:</strong> <code onclick="document.getElementById('vehicleId').value = this.innerText" style="cursor: pointer;">68a8a86a75ca715237ee7543</code>
+                    </div>
+                </div>
+                <div class="tab-container">
+                    <button class="tab active" onclick="switchTab('customer')">Customer</button>
+                    <button class="tab" onclick="switchTab('driver')">Driver</button>
+                </div>
+
+                <div id="customer-auth" class="tab-content active">
+                    <div class="form-group">
+                        <label>Customer ID</label>
+                        <input type="text" id="customerId" placeholder="69721da7c481eb76c9734f59" value="69721da7c481eb76c9734f59">
+                    </div>
+                    <button class="btn btn-success" onclick="connectAsCustomer()">Connect as Customer</button>
+                </div>
+
+                <div id="driver-auth" class="tab-content">
+                    <div class="form-group">
+                        <label>Owner ID (User ID)</label>
+                        <input type="text" id="userId" placeholder="687195fad2d156c769a36458" value="687195fad2d156c769a36458">
+                    </div>
+                    <div class="form-group">
+                        <label>User Type</label>
+                        <select id="driverType">
+                            <option value="OWNER">OWNER</option>
+                        </select>
+                    </div>
+                    <div class="info-box" style="background-color: #e8f4fd; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;">
+                        <strong>Note:</strong> Owner connects and selects their driver & vehicle when raising requests
+                    </div>
+                    <button class="btn btn-success" onclick="connectAsOwner()">Connect as Owner</button>
+                </div>
+            </div>
+
+            <!-- Customer Actions -->
+            <div class="section">
+                <h2>🧑‍💼 Customer Actions</h2>
+                <div class="info-box" style="background-color: #d1ecf1; padding: 10px; margin-bottom: 15px; border-radius: 5px; font-size: 12px;">
+                    <strong>📍 Your Location:</strong> <span id="customerLocationDisplay">Not detected yet</span><br>
+                    <small>Location is automatically detected when you create a ride to find nearby owners</small>
+                </div>
+                <div class="info-box" style="background: linear-gradient(135deg, #e3f2fd 0%, #fff3e0 100%); padding: 12px; margin-bottom: 15px; border-radius: 5px; font-size: 12px; border-left: 4px solid #2196f3;">
+                    <strong>🚗 Ride Types Explained:</strong><br>
+                    <div style="margin-top: 8px;">
+                        <strong style="color: #28a745;">QUICKRIDE:</strong> Immediate booking, 10km radius, 3min timeout, local trips<br>
+                        <strong style="color: #ff9800;">OUTSTATION:</strong> 2+ hours advance booking, 100km radius, 1hr timeout, long-distance trips
+                    </div>
+                </div>
+                <div class="info-box" style="background-color: #fff3cd; padding: 10px; margin-bottom: 15px; border-radius: 5px; font-size: 11px; border-left: 3px solid #ffc107;">
+                    <strong>⚡ Auto-Default:</strong> QUICKRIDE rides are automatically marked as <strong>DEFAULTED</strong> if:<br>
+                    • You disconnect/close browser before acceptance<br>
+                    • No driver accepts within 3 minutes<br>
+                    • You forget to cancel the ride
+                </div>
+                <div class="form-group">
+                    <label>Pickup Location</label>
+                    <input type="text" id="pickupLocation" value="MG Road, Bangalore">
+                </div>
+                <div class="form-group">
+                    <label>Drop Location</label>
+                    <input type="text" id="dropLocation" value="Bangalore Airport">
+                </div>
+                <div class="form-group">
+                    <label>Ride Type</label>
+                    <select id="rideType" onchange="handleRideTypeChange()">
+                        <option value="QUICKRIDE">QUICKRIDE (Local, within 10km)</option>
+                        <option value="OUTSTATION">OUTSTATION (Advance booking, 100km+)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Pickup Date & Time</label>
+                    <input type="datetime-local" id="pickupDateTime" onchange="validatePickupTime()">
+                </div>
+                <div class="form-group">
+                    <label>Vehicle Type</label>
+                    <select id="vehicleType">
+                        <option value="SEDAN">SEDAN</option>
+                        <option value="SUV">SUV</option>
+                        <option value="AUTO">AUTO</option>
+                        <option value="BIKE">BIKE</option>
+                        <option value="MUV">MUV</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Passengers</label>
+                    <input type="number" id="passengers" value="2" min="1" max="6">
+                </div>
+                <div class="form-group">
+                    <label>Estimated Distance (km)</label>
+                    <input type="number" id="estimatedDistance" value="15" min="1" oninput="calculateFare()">
+                </div>
+                <div class="form-group">
+                    <label>Fare (₹) <small id="fareCalculation" style="color: #6c757d;"></small></label>
+                    <input type="number" id="fare" value="500" min="0">
+                </div>
+                <button class="btn btn-primary" onclick="createRide()">Create Ride</button>
+                <button class="btn btn-warning" onclick="updateFare()">Update Fare</button>
+                <button class="btn btn-danger" onclick="cancelRide()">Cancel Ride</button>
+
+                <hr style="margin: 20px 0; border: 1px solid #dee2e6;">
+
+                <div class="form-group">
+                    <label>Request ID (to accept/decline)</label>
+                    <input type="text" id="requestId" placeholder="Paste request ID here">
+                </div>
+                <button class="btn btn-success" onclick="acceptRequest()">Accept Request</button>
+                <button class="btn btn-danger" onclick="declineRequest()">Decline Request</button>
+                
+                <hr style="margin: 20px 0; border: 1px dashed #dee2e6;">
+                
+                <!-- Customer OTP Section -->
+                <div style="border: 2px solid #6f42c1; border-radius: 8px; padding: 15px; margin: 15px 0; background: #f8f5ff;">
+                    <h3 style="margin-top: 0; color: #6f42c1;">🔐 Ride Start OTP</h3>
+                    <div class="info-box" style="background-color: #e7e3ff; padding: 10px; margin-bottom: 10px; border-radius: 5px; font-size: 12px;">
+                        <strong>ℹ️ Info:</strong> After accepting a request, the OTP will appear here. Share it with the driver to start the ride.
+                    </div>
+                    <div id="customerOtpDisplay" style="display: none; background: #fff; padding: 20px; border-radius: 5px; margin: 10px 0; border: 2px dashed #6f42c1;">
+                        <div style="font-size: 28px; font-weight: bold; color: #6f42c1; text-align: center; font-family: monospace; letter-spacing: 8px;" id="customerOtpValue">----</div>
+                        <div style="text-align: center; margin-top: 10px; color: #6c757d; font-size: 12px;">
+                            Share this OTP with the driver to start the ride
+                        </div>
+                        <div style="text-align: center; margin-top: 5px; color: #dc3545; font-size: 11px;" id="customerOtpExpiry"></div>
+                    </div>
+                    <div id="customerOtpEmpty" style="padding: 20px; text-align: center; color: #6c757d; border: 2px dashed #dee2e6; border-radius: 8px;">
+                        Accept a request to see the OTP
+                    </div>
+                </div>
+            </div>
+
+            <!-- Owner Actions -->
+            <div class="section">
+                <h2>🚗 Owner/Driver Actions</h2>
+                <div class="info-box" style="background-color: #d4edda; padding: 12px; margin-bottom: 15px; border-radius: 5px; font-size: 12px; border-left: 3px solid #28a745;">
+                    <strong>🔐 OTP Flow:</strong> After customer accepts → Customer sees OTP on screen → Get your OTP copy → Customer shares OTP → Enter OTP to start ride
+                </div>
+                <div class="form-group">
+                    <label>Ride ID (for ride actions)</label>
+                    <input type="text" id="rideIdForAction" placeholder="Paste ride ID here">
+                </div>
+                
+                <!-- OTP Section -->
+                <div style="border: 2px solid #17a2b8; border-radius: 8px; padding: 15px; margin: 15px 0; background: #e7f7fa;">
+                    <h3 style="margin-top: 0; color: #17a2b8;">🔐 OTP Verification</h3>
+                    <div class="info-box" style="background-color: #d1f2ff; padding: 10px; margin-bottom: 10px; border-radius: 5px; font-size: 11px;">
+                        <strong>ℹ️ Note:</strong> Customer already has the OTP displayed on their screen. Get your copy below and ask customer to share theirs.
+                    </div>
+                    <button class="btn btn-primary" onclick="getDriverOTP()" style="margin-bottom: 10px;">Get OTP from System</button>
+                    <div id="otpDisplay" style="display: none; background: #fff; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px dashed #28a745;">
+                        <div style="font-size: 24px; font-weight: bold; color: #28a745; text-align: center; font-family: monospace;" id="otpValue">----</div>
+                        <div style="text-align: center; margin-top: 10px; color: #6c757d; font-size: 12px;">
+                            Customer has this same OTP. Ask them to confirm it.
+                        </div>
+                        <div style="text-align: center; margin-top: 5px; color: #dc3545; font-size: 11px;" id="otpExpiry"></div>
+                    </div>
+                    <div class="form-group" style="margin-top: 15px;">
+                        <label>Enter OTP to Start Ride</label>
+                        <input type="text" id="otpInput" placeholder="Enter 4-digit OTP" maxlength="4" style="font-size: 20px; text-align: center; letter-spacing: 5px;">
+                    </div>
+                    <button class="btn btn-success" onclick="startRideWithOTP()">🚀 Start Ride with OTP</button>
+                </div>
+                </div>
+
+                <hr style="margin: 20px 0;">
+                
+                <!-- Location Tracking Status -->
+                <div style="border: 2px solid #28a745; border-radius: 8px; padding: 15px; margin: 15px 0; background: #e8f8f0;">
+                    <h3 style="margin-top: 0; color: #28a745;">📡 Location Sharing Status</h3>
+                    <div id="locationTrackingStatus" style="text-align: center; padding: 15px; background: white; border-radius: 5px; margin: 10px 0;">
+                        <div style="font-size: 18px; font-weight: bold; color: #6c757d;">🔴 Inactive</div>
+                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">Start a ride to begin location sharing</div>
+                    </div>
+                    <div style="font-size: 11px; color: #6c757d; margin-top: 10px; text-align: center;">
+                        Location updates every 5 seconds when active
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary" onclick="completeRide()">✓ Complete Ride</button>
+            </div>
+
+            <!-- Incoming Requests Section (for Customers) -->
+            <div class="section">
+                <h2>📨 Incoming Requests (Customer View)</h2>
+                <div class="info-box" style="background-color: #e7f3ff; padding: 10px; margin-bottom: 15px; border-radius: 5px; font-size: 12px;">
+                    <strong>ℹ️ Info:</strong> Requests from owners who want to take your ride will appear here
+                </div>
+                <div id="requestsContainer" style="margin-top: 15px; max-height: 300px; overflow-y: auto;">
+                    <div style="padding: 20px; text-align: center; color: #6c757d;">
+                        No incoming requests. Create a ride first.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Driver Location Tracking (Customer View) -->
+            <div class="section">
+                <h2>📍 Driver Location (Customer View)</h2>
+                <div class="info-box" style="background-color: #e7f3ff; padding: 10px; margin-bottom: 15px; border-radius: 5px; font-size: 12px;">
+                    <strong>ℹ️ Info:</strong> Driver's real-time location will appear here after ride starts
+                </div>
+                <div id="locationTrackingContainer" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; text-align: center;">
+                    <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">🚗 Driver En Route</div>
+                    <div id="locationStatus" style="font-size: 14px; margin-bottom: 15px;">Waiting for location updates...</div>
+                    <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 8px; backdrop-filter: blur(10px);">
+                        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">Last Updated</div>
+                        <div id="locationTimestamp" style="font-size: 16px; font-weight: bold;">Never</div>
+                    </div>
+                    <div style="margin-top: 15px; font-size: 12px; opacity: 0.8;">
+                        Location updates every 5 seconds
+                    </div>
+                </div>
+                <div id="locationEmptyState" style="padding: 20px; text-align: center; color: #6c757d; border: 2px dashed #dee2e6; border-radius: 8px;">
+                    No active ride. Create a ride and wait for it to start.
+                </div>
+            </div>
+
+            <!-- Available Rides Section -->
+            
+
+            <!-- Console Output -->
+            <div class="section console" id="console">
+                <div class="console-line info">📋 Console Output - Waiting for events...</div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .ride-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+        }
+        .ride-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        .ride-card.new {
+            animation: slideIn 0.5s ease;
+            border-left: 4px solid #28a745;
+        }
+        .ride-card.updated {
+            animation: pulse 0.5s ease;
+            border-left: 4px solid #ffc107;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .ride-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .ride-route {
+            font-size: 16px;
+            font-weight: bold;
+            color: #212529;
+        }
+        .ride-status {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-PENDING {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status-ACCEPTED {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        .status-ONGOING {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-COMPLETED {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+        .status-CANCELLED {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status-DEFAULTED {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px dashed #dc3545;
+        }
+        .ride-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            font-size: 13px;
+            color: #6c757d;
+        }
+        .ride-detail {
+            display: flex;
+            align-items: center;
+        }
+        .ride-detail strong {
+            margin-right: 5px;
+            color: #495057;
+        }
+        .ride-actions {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e9ecef;
+        }
+        .ride-id {
+            font-family: monospace;
+            font-size: 11px;
+            color: #6c757d;
+            cursor: pointer;
+        }
+        .ride-id:hover {
+            color: #007bff;
+        }
+    </style>
+
+    <script>
+        let socket = null;
+        let currentRideId = null;
+        let currentUserId = null;
+        let currentCustomerId = null;
+
+        // Console logging
+        function log(message, type = 'info') {
+            const console = document.getElementById('console');
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            line.textContent = `[${timestamp}] ${message}`;
+            console.appendChild(line);
+            console.scrollTop = console.scrollHeight;
+        }
+
+        // Connection
+        function connectSocket() {
+            const url = document.getElementById('serverUrl').value;
+            socket = io(url, {
+                transports: ['websocket'],
+                reconnection: true
+            });
+
+            socket.on('connect', () => {
+                document.getElementById('connectionStatus').classList.add('connected');
+                document.getElementById('connectionText').textContent = 'Connected';
+                document.getElementById('socketId').textContent = socket.id;
+                log('✓ Connected to server: ' + socket.id, 'success');
+            });
+
+            socket.on('disconnect', (reason) => {
+                document.getElementById('connectionStatus').classList.remove('connected');
+                document.getElementById('connectionText').textContent = 'Disconnected';
+                document.getElementById('socketId').textContent = '-';
+                log('✗ Disconnected: ' + reason, 'error');
+            });
+
+            socket.on('connect_error', (error) => {
+                log('✗ Connection error: ' + error.message, 'error');
+            });
+
+            // Register all event listeners
+            registerEventListeners();
+        }
+
+        function disconnectSocket() {
+            if (socket) {
+                socket.disconnect();
+                log('Manually disconnected', 'warning');
+            }
+        }
+
+        // Authentication
+        function connectAsCustomer() {
+            const customerId = document.getElementById('customerId').value;
+            if (!customerId) {
+                alert('Please enter Customer ID');
+                return;
+            }
+            currentCustomerId = customerId;
+            socket.emit('customer:connect', { customerId });
+            document.getElementById('userType').textContent = 'Customer';
+            log('→ Connecting as customer: ' + customerId, 'info');
+        }
+
+        function connectAsDriver() {
+            // Kept for backwards compatibility, redirects to connectAsOwner
+            connectAsOwner();
+        }
+
+        function connectAsOwner() {
+            const userId = document.getElementById('userId').value;
+            const userType = 'OWNER';  // Always OWNER
+            if (!userId) {
+                alert('Please enter Owner ID');
+                return;
+            }
+            currentUserId = userId;
+            socket.emit('user:connect', { userId, userType });
+            document.getElementById('userType').textContent = userType;
+            log('→ Connecting as Owner: ' + userId, 'info');
+        }
+
+        // Customer Actions
+        function createRide() {
+            if (!currentCustomerId) {
+                alert('Please connect as customer first');
+                return;
+            }
+
+            // Try to get customer's current location
+            if (navigator.geolocation) {
+                log('→ Getting your current location...', 'info');
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const customerLocation = {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        };
+                        createRideWithLocation(customerLocation);
+                    },
+                    (error) => {
+                        log('⚠ Location access denied, using default location', 'warning');
+                        // Fallback to Bangalore default
+                        const customerLocation = {
+                            latitude: 12.9716,
+                            longitude: 77.5946
+                        };
+                        createRideWithLocation(customerLocation);
+                    },
+                    { enableHighAccuracy: true, timeout: 5000 }
+                );
+            } else {
+                log('⚠ Geolocation not supported, using default location', 'warning');
+                const customerLocation = {
+                    latitude: 12.9716,
+                    longitude: 77.5946
+                };
+                createRideWithLocation(customerLocation);
+            }
+        }
+
+        function createRideWithLocation(customerLocation) {
+            // Display customer location
+            const locationDisplay = document.getElementById('customerLocationDisplay');
+            locationDisplay.textContent = `${customerLocation.latitude.toFixed(4)}, ${customerLocation.longitude.toFixed(4)}`;
+            locationDisplay.style.color = '#155724';
+            locationDisplay.style.fontWeight = 'bold';
+
+            const rideType = document.getElementById('rideType').value;
+            const pickupDateTimeInput = document.getElementById('pickupDateTime').value;
+            const pickupDateTime = pickupDateTimeInput ? new Date(pickupDateTimeInput) : new Date();
+
+            const rideData = {
+                to: document.getElementById('dropLocation').value,
+                from: document.getElementById('pickupLocation').value,
+                pickUpDateTime: pickupDateTime,
+                vehicleType: document.getElementById('vehicleType').value,
+                passangerCount: parseInt(document.getElementById('passengers').value),
+                fare: parseInt(document.getElementById('fare').value),
+                rideType: rideType,
+                bookedBy: currentCustomerId,
+                estimatedDistance: parseInt(document.getElementById('estimatedDistance').value),
+                customerLocation: customerLocation
+            };
+            
+            const searchRadius = rideType === 'QUICKRIDE' ? '10km' : '100km';
+            const bookingType = rideType === 'QUICKRIDE' ? 'Immediate' : 'Advance';
+            
+            log(`→ Creating ${rideType} ride from your location (${customerLocation.latitude.toFixed(4)}, ${customerLocation.longitude.toFixed(4)})`, 'info');
+            log(`→ Booking Type: ${bookingType}, Search Radius: ${searchRadius}`, 'info');
+            log(`→ Route: ${rideData.from} → ${rideData.to} | Distance: ${rideData.estimatedDistance}km | Fare: ₹${rideData.fare}`, 'info');
+            socket.emit('ride:create', rideData);
+        }
+
+        function acceptRequest() {
+            const requestId = document.getElementById('requestId').value;
+            if (!requestId || !currentRideId) {
+                alert('Please enter Request ID and ensure a ride is created');
+                return;
+            }
+            socket.emit('request:accept', { requestId, rideId: currentRideId });
+            log('→ Accepting request: ' + requestId, 'info');
+        }
+
+        function declineRequest() {
+            const requestId = document.getElementById('requestId').value;
+            if (!requestId || !currentRideId) {
+                alert('Please enter Request ID and ensure a ride is created');
+                return;
+            }
+            socket.emit('request:decline', { requestId, rideId: currentRideId, reason: 'Not interested' });
+            log('→ Declining request: ' + requestId, 'warning');
+        }
+
+        function updateFare() {
+            const newFare = parseInt(document.getElementById('fare').value);
+            if (!currentRideId) {
+                alert('Please create a ride first');
+                return;
+            }
+            socket.emit('ride:update-fare', { rideId: currentRideId, newFare });
+            log('→ Updating fare to ₹' + newFare, 'info');
+        }
+
+        function cancelRide() {
+            if (!currentRideId) {
+                alert('Please create a ride first');
+                return;
+            }
+            socket.emit('ride:cancel', { rideId: currentRideId, customerId: currentCustomerId });
+            log('→ Cancelling ride: ' + currentRideId, 'warning');
+        }
+
+        // Driver Actions
+        function goOnline() {
+            if (!currentUserId) {
+                alert('Please connect as owner first');
+                return;
+            }
+            socket.emit('user:toggle-status', { userId: currentUserId, isOnline: true });
+            log('→ Going online', 'info');
+        }
+
+        function goOffline() {
+            if (!currentUserId) {
+                alert('Please connect as owner first');
+                return;
+            }
+            socket.emit('user:toggle-status', { userId: currentUserId, isOnline: false });
+            log('→ Going offline', 'warning');
+        }
+
+        function updateLocation() {
+            const latitude = parseFloat(document.getElementById('latitude').value);
+            const longitude = parseFloat(document.getElementById('longitude').value);
+            const rideId = document.getElementById('rideIdForAction').value;
+            if (!currentUserId) {
+                alert('Please connect as owner first');
+                return;
+            }
+            socket.emit('user:update-location', { 
+                userId: currentUserId, 
+                latitude, 
+                longitude,
+                rideId: rideId || null
+            });
+            log('→ Updating location: ' + latitude + ', ' + longitude + (rideId ? ' (Ride: ' + rideId + ')' : ''), 'info');
+        }
+
+        function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    document.getElementById('latitude').value = position.coords.latitude;
+                    document.getElementById('longitude').value = position.coords.longitude;
+                    updateLocation();
+                }, (error) => {
+                    alert('Unable to get location: ' + error.message);
+                });
+            } else {
+                alert('Geolocation is not supported by this browser');
+            }
+        }
+
+        function createRequest() {
+            const driverId = document.getElementById('driverId').value;
+            const vehicleId = document.getElementById('vehicleId').value;
+            const rideId = document.getElementById('rideIdForRequest').value;
+            const fare = parseInt(document.getElementById('requestFare').value);
+
+            if (!driverId || !vehicleId || !rideId || !currentUserId) {
+                alert('Please fill all fields (Driver ID, Vehicle ID) and connect as owner first');
+                return;
+            }
+
+            socket.emit('request:create', {
+                driver: driverId,  // Owner selects which driver from their availableDrivers
+                vehicle: vehicleId,  // Owner selects which vehicle from their availableVehicles
+                requestRaisedBy: currentUserId,  // Owner who is raising the request
+                requestedFor: rideId,
+                fare: fare,
+                requestStatus: 'PENDING'
+            });
+            log('→ Creating request for ride: ' + rideId + ' (Driver: ' + driverId + ', Vehicle: ' + vehicleId + ', Fare: ₹' + fare + ')', 'info');
+        }
+
+        // OTP and Location Tracking
+        let locationUpdateInterval = null;
+
+        function getDriverOTP() {
+            const rideId = document.getElementById('rideIdForAction').value;
+            if (!rideId || !currentUserId) {
+                alert('Please enter Ride ID and connect as owner first');
+                return;
+            }
+            socket.emit('driver:get-otp', { rideId, driverId: currentUserId });
+            log('→ Requesting OTP for ride: ' + rideId, 'info');
+        }
+
+        function requestCustomerOTP() {
+            if (!currentRideId || !currentCustomerId) {
+                alert('Please create a ride and accept a request first');
+                return;
+            }
+            socket.emit('ride:request-otp', { rideId: currentRideId, customerId: currentCustomerId });
+            log('→ Checking OTP status for ride: ' + currentRideId, 'info');
+        }
+
+        function startRideWithOTP() {
+            const rideId = document.getElementById('rideIdForAction').value;
+            const otp = document.getElementById('otpInput').value;
+            
+            if (!rideId || !currentUserId) {
+                alert('Please enter Ride ID and connect as owner first');
+                return;
+            }
+            
+            if (!otp || otp.length !== 4) {
+                alert('Please enter a valid 4-digit OTP');
+                return;
+            }
+            
+            socket.emit('ride:start', { rideId, driverId: currentUserId, otp });
+            log('→ Starting ride with OTP: ' + rideId, 'info');
+        }
+
+        function startRide() {
+            // Legacy function, redirect to OTP flow
+            startRideWithOTP();
+        }
+
+        function startLocationTracking() {
+            if (locationUpdateInterval) {
+                log('⚠ Location tracking already active', 'warning');
+                return; // Already tracking
+            }
+            
+            const rideId = document.getElementById('rideIdForAction').value;
+            if (!rideId) {
+                log('⚠ No ride ID found - please ensure ride has started', 'warning');
+                alert('Please enter Ride ID in the Driver Actions section first');
+                return;
+            }
+            
+            log('✓ Starting continuous location tracking (5-second intervals)', 'success');
+            log('  Ride ID: ' + rideId, 'info');
+            log('  Driver will share location to customer in real-time', 'info');
+            
+            // Update status indicator
+            const statusDiv = document.getElementById('locationTrackingStatus');
+            if (statusDiv) {
+                statusDiv.innerHTML = `
+                    <div style="font-size: 18px; font-weight: bold; color: #28a745;">🟢 ACTIVE</div>
+                    <div style="font-size: 12px; color: #28a745; margin-top: 5px;">Broadcasting location every 5 seconds</div>
+                    <div style="font-size: 11px; color: #6c757d; margin-top: 3px;">Ride: ${rideId.substring(0, 8)}...</div>
+                `;
+            }
+            
+            // Send initial location immediately
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    socket.emit('user:update-location', {
+                        userId: currentUserId,
+                        latitude: lat,
+                        longitude: lon,
+                        rideId: rideId
+                    });
+                    log('📍 Initial driver location sent: ' + lat.toFixed(6) + ', ' + lon.toFixed(6) + ' (Ride: ' + rideId + ')', 'success');
+                }, (error) => {
+                    log('✗ Failed to get initial location: ' + error.message, 'error');
+                });
+            }
+            
+            // Update location every 5 seconds
+            locationUpdateInterval = setInterval(() => {
+                const currentRideId = document.getElementById('rideIdForAction').value;
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition((position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        socket.emit('user:update-location', {
+                            userId: currentUserId,
+                            latitude: lat,
+                            longitude: lon,
+                            rideId: currentRideId
+                        });
+                        log('📍 Driver location: ' + lat.toFixed(6) + ', ' + lon.toFixed(6) + ' → Broadcasting to customer (Ride: ' + currentRideId + ')', 'info');
+                    }, (error) => {
+                        log('✗ Location error: ' + error.message, 'error');
+                    });
+                } else {
+                    log('✗ Geolocation not supported', 'error');
+                }
+            }, 5000);
+        }
+
+        function stopLocationTracking() {
+            if (locationUpdateInterval) {
+                clearInterval(locationUpdateInterval);
+                locationUpdateInterval = null;
+                log('⚠ Location tracking stopped - Ride ended', 'warning');
+                log('  No more location updates will be sent', 'info');
+                
+                // Update status indicator
+                const statusDiv = document.getElementById('locationTrackingStatus');
+                if (statusDiv) {
+                    statusDiv.innerHTML = `
+                        <div style="font-size: 18px; font-weight: bold; color: #6c757d;">🔴 Inactive</div>
+                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">Start a ride to begin location sharing</div>
+                    `;
+                }
+            } else {
+                log('ℹ️ Location tracking was not active', 'info');
+            }
+        }
+
+        function showDriverLocation(latitude, longitude, timestamp) {
+            const container = document.getElementById('locationTrackingContainer');
+            const emptyState = document.getElementById('locationEmptyState');
+            const status = document.getElementById('locationStatus');
+            const timestampElement = document.getElementById('locationTimestamp');
+            
+            container.style.display = 'block';
+            emptyState.style.display = 'none';
+            
+            // Calculate approximate distance message (simplified)
+            status.textContent = '📍 Driver is on the way to you';
+            
+            // Update timestamp
+            const time = new Date(timestamp).toLocaleTimeString();
+            timestampElement.textContent = time;
+            
+            // Detailed console logging for debugging
+            console.log('═══════════════════════════════════════');
+            console.log('🚗 DRIVER LIVE LOCATION UPDATE');
+            console.log('Latitude:  ' + latitude.toFixed(6));
+            console.log('Longitude: ' + longitude.toFixed(6));
+            console.log('Time:      ' + time);
+            console.log('Full Time: ' + new Date(timestamp).toISOString());
+            console.log('═══════════════════════════════════════');
+            
+            log('📍 Customer received driver location: ' + latitude.toFixed(6) + ', ' + longitude.toFixed(6) + ' at ' + time, 'success');
+        }
+
+        function hideDriverLocation() {
+            const container = document.getElementById('locationTrackingContainer');
+            const emptyState = document.getElementById('locationEmptyState');
+            
+            container.style.display = 'none';
+            emptyState.style.display = 'block';
+        }
+
+        function completeRide() {
+            const rideId = document.getElementById('rideIdForAction').value;
+            if (!rideId || !currentUserId) {
+                alert('Please enter Ride ID and connect as owner first');
+                return;
+            }
+            socket.emit('ride:complete', { rideId, driverId: currentUserId });
+            log('→ Completing ride: ' + rideId, 'info');
+        }
+
+        // Rides Management
+        let ridesMap = new Map();
+        let autoRefreshInterval = null;
+
+        function subscribeToRides() {
+            if (!socket) {
+                alert('Please connect first');
+                return;
+            }
+            socket.emit('rides:subscribe', { city: null }); // Subscribe to all rides
+            socket.emit('rides:get-available', { filters: { rideStatus: 'PENDING' } });
+            log('→ Subscribing to ride updates', 'info');
+        }
+
+        function refreshRides() {
+            if (!socket) {
+                alert('Please connect first');
+                return;
+            }
+            socket.emit('rides:get-available', { filters: { rideStatus: 'PENDING' } });
+            log('→ Refreshing rides list', 'info');
+        }
+
+        function toggleAutoRefresh() {
+            const checkbox = document.getElementById('autoRefresh');
+            if (checkbox.checked) {
+                autoRefreshInterval = setInterval(() => {
+                    refreshRides();
+                }, 5000);
+                log('✓ Auto-refresh enabled (5s)', 'success');
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+                log('⚠ Auto-refresh disabled', 'warning');
+            }
+        }
+
+        function renderRides(rides) {
+            const container = document.getElementById('ridesContainer');
+            
+            if (rides.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No available rides at the moment.</div>';
+                return;
+            }
+
+            rides.forEach(ride => {
+                ridesMap.set(ride._id, ride);
+            });
+
+            container.innerHTML = '';
+            
+            rides.forEach(ride => {
+                const rideCard = createRideCard(ride, false);
+                container.appendChild(rideCard);
+            });
+        }
+
+        function addNewRide(ride) {
+            ridesMap.set(ride._id, ride);
+            const container = document.getElementById('ridesContainer');
+            
+            // Remove empty state if exists
+            if (container.children.length === 1 && container.children[0].textContent.includes('No available rides')) {
+                container.innerHTML = '';
+            }
+            
+            const rideCard = createRideCard(ride, true);
+            container.insertBefore(rideCard, container.firstChild);
+            
+            // Play notification sound (optional)
+            showNotification('New Ride Available!', `From: ${ride.from} to ${ride.to}<br>Fare: ₹${ride.fare}`);
+        }
+
+        function updateRideStatus(rideId, status, message) {
+            const ride = ridesMap.get(rideId);
+            if (!ride) return;
+            
+            ride.rideStatus = status;
+            ridesMap.set(rideId, ride);
+            
+            // Find and update the card
+            const container = document.getElementById('ridesContainer');
+            const cards = container.getElementsByClassName('ride-card');
+            
+            for (let card of cards) {
+                if (card.dataset.rideId === rideId) {
+                    card.classList.add('updated');
+                    setTimeout(() => card.classList.remove('updated'), 500);
+                    
+                    // Update status badge
+                    const statusBadge = card.querySelector('.ride-status');
+                    statusBadge.className = `ride-status status-${status}`;
+                    statusBadge.textContent = status;
+                    
+                    // If completed, cancelled, or defaulted, move to bottom or remove after delay
+                    if (status === 'COMPLETED' || status === 'CANCELLED' || status === 'DEFAULTED') {
+                        setTimeout(() => {
+                            card.style.opacity = '0.5';
+                            setTimeout(() => card.remove(), 2000);
+                        }, 3000);
+                    }
+                    break;
+                }
+            }
+        }
+
+        function createRideCard(ride, isNew = false) {
+            const card = document.createElement('div');
+            card.className = 'ride-card' + (isNew ? ' new' : '');
+            card.dataset.rideId = ride._id;
+            
+            const pickupTime = new Date(ride.pickUpDateTime).toLocaleString();
+            const rideTypeBadge = ride.rideType === 'OUTSTATION' 
+                ? '<span style="background: #ffc107; color: #000; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: bold;">OUTSTATION</span>'
+                : '<span style="background: #28a745; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: bold;">QUICKRIDE</span>';
+            
+            card.innerHTML = `
+                <div class="ride-header">
+                    <div class="ride-route">📍 ${ride.from} → ${ride.to}</div>
+                    <span class="ride-status status-${ride.rideStatus}">${ride.rideStatus}</span>
+                </div>
+                <div class="ride-details">
+                    <div class="ride-detail"><strong>🚗 Vehicle:</strong> ${ride.vehicleType}</div>
+                    <div class="ride-detail"><strong>💰 Fare:</strong> ₹${ride.fare}</div>
+                    <div class="ride-detail"><strong>👥 Passengers:</strong> ${ride.passangerCount}</div>
+                    <div class="ride-detail"><strong>📦 Type:</strong> ${rideTypeBadge}</div>
+                    <div class="ride-detail"><strong>🕐 Pickup:</strong> ${pickupTime}</div>
+                    <div class="ride-detail"><strong>📏 Distance:</strong> ${ride.estimatedDistance || 'N/A'} km</div>
+                </div>
+                <div class="ride-actions">
+                    <button class="btn btn-sm btn-primary" onclick="selectRideForRequest('${ride._id}')" style="font-size: 12px; padding: 4px 12px;">
+                        Raise Request
+                    </button>
+                    <span class="ride-id" onclick="copyToClipboard('${ride._id}')" title="Click to copy">
+                        ID: ${ride._id}
+                    </span>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        function selectRideForRequest(rideId) {
+            document.getElementById('rideIdForRequest').value = rideId;
+            document.getElementById('rideIdForAction').value = rideId;
+            
+            // Auto-fill fare from selected ride
+            const ride = ridesMap.get(rideId);
+            if (ride && ride.fare) {
+                document.getElementById('requestFare').value = ride.fare;
+                log('✓ Ride selected: ' + rideId + ' | Fare: ₹' + ride.fare, 'success');
+                showNotification('Ride Selected', 'Ride ID and Fare (₹' + ride.fare + ') copied to request fields');
+            } else {
+                log('✓ Ride selected: ' + rideId, 'success');
+                showNotification('Ride Selected', 'Ride ID copied to request fields');
+            }
+            
+            // Scroll to request section
+            document.querySelector('#driverId').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showNotification('Copied!', 'Ride ID copied to clipboard');
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+            });
+        }
+
+        // Incoming Requests Management
+        function addIncomingRequest(request) {
+            const container = document.getElementById('requestsContainer');
+            
+            // Remove empty state if exists
+            if (container.children.length === 1 && container.children[0].textContent.includes('No incoming requests')) {
+                container.innerHTML = '';
+            }
+            
+            const requestCard = document.createElement('div');
+            requestCard.className = 'ride-card new';
+            requestCard.dataset.requestId = request._id;
+            requestCard.style.borderLeft = '4px solid #007bff';
+            
+            const ownerName = request.requestRaisedBy?.name || request.requestRaisedBy?._id || 'Unknown';
+            const ownerPhone = request.requestRaisedBy?.phoneNumber || 'N/A';
+            const driverInfo = request.driver?.name || request.driver || 'N/A';
+            const vehicleInfo = request.vehicle?.registrationNumber || request.vehicle || 'N/A';
+            
+            requestCard.innerHTML = `
+                <div class="ride-header">
+                    <div class="ride-route">📨 Request from ${ownerName}</div>
+                    <span class="ride-status" style="background: #cfe2ff; color: #084298;">PENDING</span>
+                </div>
+                <div class="ride-details">
+                    <div class="ride-detail"><strong>👤 Owner:</strong> ${ownerName}</div>
+                    <div class="ride-detail"><strong>💰 Fare:</strong> ₹${request.fare}</div>
+                    <div class="ride-detail"><strong>📞 Phone:</strong> ${ownerPhone}</div>
+                    <div class="ride-detail"><strong>🚗 Driver:</strong> ${driverInfo}</div>
+                    <div class="ride-detail" style="grid-column: 1 / -1;"><strong>🚙 Vehicle:</strong> ${vehicleInfo}</div>
+                </div>
+                <div class="ride-actions">
+                    <button class="btn btn-success" onclick="acceptRequestFromCard('${request._id}')" style="font-size: 12px; padding: 4px 12px;">
+                        ✓ Accept
+                    </button>
+                    <button class="btn btn-danger" onclick="declineRequestFromCard('${request._id}')" style="font-size: 12px; padding: 4px 12px;">
+                        ✗ Decline
+                    </button>
+                    <span class="ride-id" onclick="copyToClipboard('${request._id}')" title="Click to copy">
+                        ID: ${request._id}
+                    </span>
+                </div>
+            `;
+            
+            container.insertBefore(requestCard, container.firstChild);
+        }
+
+        function acceptRequestFromCard(requestId) {
+            if (!currentRideId) {
+                alert('No active ride. Please create a ride first.');
+                return;
+            }
+            socket.emit('request:accept', { requestId, rideId: currentRideId });
+            log('→ Accepting request: ' + requestId, 'info');
+            
+            // Remove the card
+            removeRequestCard(requestId);
+        }
+
+        function declineRequestFromCard(requestId) {
+            if (!currentRideId) {
+                alert('No active ride. Please create a ride first.');
+                return;
+            }
+            socket.emit('request:decline', { requestId, rideId: currentRideId, reason: 'Not interested' });
+            log('→ Declining request: ' + requestId, 'warning');
+            
+            // Remove the card
+            removeRequestCard(requestId);
+        }
+
+        function removeRequestCard(requestId) {
+            const container = document.getElementById('requestsContainer');
+            const cards = container.querySelectorAll('.ride-card');
+            
+            for (let card of cards) {
+                if (card.dataset.requestId === requestId) {
+                    card.style.opacity = '0.5';
+                    setTimeout(() => {
+                        card.remove();
+                        // Show empty state if no cards left
+                        if (container.children.length === 0) {
+                            container.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No incoming requests.</div>';
+                        }
+                    }, 300);
+                    break;
+                }
+            }
+        }
+
+        // Event Listeners
+        function registerEventListeners() {
+            // Customer events
+            socket.on('customer:connected', (data) => {
+                log('✓ Customer connected: ' + JSON.stringify(data), 'success');
+            });
+
+            socket.on('ride:created', (data) => {
+                currentRideId = data.ride._id;
+                const rideType = data.ride.rideType || 'QUICKRIDE';
+                const searchRadius = data.searchRadius || 10;
+                const timeoutMinutes = (data.timeout / 60000).toFixed(0);
+                
+                log('✓ Ride created: ' + currentRideId, 'success');
+                log(`  Type: ${rideType} | Search Radius: ${searchRadius}km | Timeout: ${timeoutMinutes}min`, 'info');
+                log('  Nearby owners found: ' + data.nearbyDrivers.length, 'info');
+                
+                if (data.nearbyDrivers.length > 0) {
+                    log('  Closest owner: ' + data.nearbyDrivers[0].name + ' (' + data.nearbyDrivers[0].distance + ' km)', 'info');
+                    showNotification('Ride Created!', `Type: ${rideType}<br>Ride ID: ${currentRideId}<br>Nearby owners: ${data.nearbyDrivers.length}<br>Closest: ${data.nearbyDrivers[0].distance} km away<br>Timeout: ${timeoutMinutes} minutes`);
+                } else {
+                    log('  ⚠ No nearby owners found', 'warning');
+                    showNotification('Ride Created', `Type: ${rideType}<br>Ride ID: ${currentRideId}<br>No nearby owners found at the moment<br>Search radius: ${searchRadius}km`);
+                }
+            });
+
+            socket.on('request:new', (data) => {
+                log('✓ New request received from owner', 'success');
+                log('  Request ID: ' + data.request._id, 'info');
+                log('  Owner: ' + (data.request.requestRaisedBy?.name || 'Unknown'), 'info');
+                log('  Fare: ₹' + data.request.fare, 'info');
+                document.getElementById('requestId').value = data.request._id;
+                
+                // Add to incoming requests UI
+                addIncomingRequest(data.request);
+                
+                showNotification('New Request!', 'Fare: ₹' + data.request.fare + '<br>Request ID: ' + data.request._id);
+            });
+
+            socket.on('request:accept-success', (data) => {
+                log('✓ Request accepted successfully', 'success');
+                
+                // Display OTP to customer
+                if (data.startOtp) {
+                    log('🔐 OTP generated: ' + data.startOtp, 'success');
+                    log('  Expires at: ' + new Date(data.startOtpExpiresAt).toLocaleString(), 'info');
+                    
+                    document.getElementById('customerOtpValue').textContent = data.startOtp;
+                    document.getElementById('customerOtpExpiry').textContent = 'Expires: ' + new Date(data.startOtpExpiresAt).toLocaleString();
+                    document.getElementById('customerOtpDisplay').style.display = 'block';
+                    document.getElementById('customerOtpEmpty').style.display = 'none';
+                    
+                    showNotification('Request Accepted!', 'OTP: <span style="font-size: 28px; font-weight: bold; color: #6f42c1;">' + data.startOtp + '</span><br><small>Share this with the driver to start the ride</small>');
+                } else {
+                    showNotification('Request Accepted!', 'Request accepted successfully');
+                }
+            });
+
+            socket.on('ride:started', (data) => {
+                log('✓ Ride started: ' + data.rideId, 'success');
+                log('  Driver ID: ' + data.driverId, 'info');
+                log('  Status: ' + data.status, 'info');
+                log('  🌐 Location tracking is now ACTIVE', 'success');
+                log('  📍 Customer will receive driver location every 5 seconds', 'info');
+                
+                // Show location tracking UI for customer
+                if (currentCustomerId) {
+                    const container = document.getElementById('locationTrackingContainer');
+                    const emptyState = document.getElementById('locationEmptyState');
+                    container.style.display = 'block';
+                    emptyState.style.display = 'none';
+                    document.getElementById('locationStatus').textContent = '🚗 Waiting for driver location...';
+                    
+                    // Hide customer OTP display (ride has started)
+                    document.getElementById('customerOtpDisplay').style.display = 'none';
+                    document.getElementById('customerOtpEmpty').style.display = 'block';
+                    
+                    log('  ✓ Customer location tracking UI activated', 'success');
+                }
+                
+                showNotification('Ride Started!', 'Your ride is now in progress<br>Driver location tracking is active');
+            });
+
+            socket.on('driver:location-update', (data) => {
+                log('📍 [CUSTOMER] Receiving driver location update', 'info');
+                log('  Ride ID: ' + data.rideId, 'info');
+                log('  Driver ID: ' + data.driverId, 'info');
+                log('  Coordinates: ' + data.latitude.toFixed(6) + ', ' + data.longitude.toFixed(6), 'info');
+                
+                // Update customer UI and console with driver location
+                showDriverLocation(data.latitude, data.longitude, data.timestamp);
+            });
+
+            socket.on('ride:completed', (data) => {
+                log('✓ Ride completed: ' + data.rideId, 'success');
+                log('  Status: COMPLETED', 'info');
+                log('  🛑 Location tracking STOPPED', 'warning');
+                
+                // Stop location tracking
+                stopLocationTracking();
+                hideDriverLocation();
+                
+                showNotification('Ride Completed!', 'Thank you for using our service');
+            });
+
+            socket.on('ride:complete-success', (data) => {
+                log('✓ Ride completed successfully', 'success');
+                log('  🛑 Location tracking STOPPED', 'warning');
+                
+                // Stop location tracking
+                stopLocationTracking();
+                hideDriverLocation();
+            });
+
+            socket.on('ride:timeout', (data) => {
+                log('⚠ Ride timeout: ' + data.message, 'warning');
+                if (data.status === 'DEFAULTED') {
+                    log('  ⚠ QUICKRIDE automatically defaulted', 'warning');
+                }
+                currentRideId = null;
+            });
+
+            socket.on('ride:defaulted', (data) => {
+                log('⚠ Ride defaulted: ' + data.reason, 'warning');
+                log('  Status: ' + data.status, 'warning');
+                showNotification('Ride Defaulted', data.message + '<br>Reason: ' + data.reason, 'warning');
+                if (data.rideId === currentRideId) {
+                    currentRideId = null;
+                }
+            });
+
+            socket.on('ride:update-fare-success', (data) => {
+                log('✓ Fare update confirmed by server', 'success');
+                // Update customer's fare input to match the new fare
+                if (data.ride && data.ride._id === currentRideId) {
+                    document.getElementById('fare').value = data.ride.fare;
+                    log('  ✓ Customer fare input updated to ₹' + data.ride.fare, 'success');
+                }
+            });
+
+            socket.on('ride:fare-updated', (data) => {
+                log('✓ Fare updated to ₹' + data.newFare, 'success');
+                
+                // Update ride in the rides list if it exists
+                const ride = ridesMap.get(data.rideId);
+                if (ride) {
+                    ride.fare = data.newFare;
+                    ridesMap.set(data.rideId, ride);
+                    
+                    // Update the fare in the UI ride cards
+                    const container = document.getElementById('ridesContainer');
+                    const cards = container.getElementsByClassName('ride-card');
+                    for (let card of cards) {
+                        if (card.dataset.rideId === data.rideId) {
+                            const fareElement = card.querySelector('.ride-detail:nth-child(2)');
+                            if (fareElement) {
+                                fareElement.innerHTML = '<strong>💰 Fare:</strong> ₹' + data.newFare;
+                                card.classList.add('updated');
+                                setTimeout(() => card.classList.remove('updated'), 500);
+                            }
+                            break;
+                        }
+                    }
+                    
+                    // Update the request fare field if this ride is currently selected (for owners)
+                    const selectedRideId = document.getElementById('rideIdForRequest').value;
+                    if (selectedRideId === data.rideId) {
+                        document.getElementById('requestFare').value = data.newFare;
+                        log('  ⚡ Request fare auto-updated to ₹' + data.newFare, 'info');
+                    }
+                    
+                    showNotification('Fare Updated!', 'Ride ' + data.rideId.substring(0, 8) + '... fare changed to ₹' + data.newFare);
+                }
+            });
+
+            socket.on('ride:cancel-success', (data) => {
+                log('✓ Ride cancelled successfully', 'success');
+                currentRideId = null;
+            });
+
+            // Owner events
+            socket.on('user:connected', (data) => {
+                log('✓ Owner connected: ' + JSON.stringify(data), 'success');
+            });
+
+            socket.on('user:status-updated', (data) => {
+                log('✓ Status updated: ' + (data.isOnline ? 'ONLINE' : 'OFFLINE'), 'success');
+                document.getElementById('onlineStatus').textContent = data.isOnline ? 'Online' : 'Offline';
+            });
+
+            socket.on('user:location-updated', (data) => {
+                log('✓ Driver location update confirmed by server', 'success');
+                log('  → Location: ' + data.latitude.toFixed(6) + ', ' + data.longitude.toFixed(6), 'info');
+                log('  → Broadcasting to customer...', 'info');
+            });
+
+            socket.on('ride:new-request', (data) => {
+                log('✓ New ride available!', 'success');
+                log('  Ride ID: ' + data.ride._id, 'info');
+                log('  From: ' + data.ride.from + ' → To: ' + data.ride.to, 'info');
+                log('  Fare: ₹' + data.ride.fare, 'info');
+                document.getElementById('rideIdForRequest').value = data.ride._id;
+                document.getElementById('rideIdForAction').value = data.ride._id;
+                showNotification('New Ride Available!', 'From: ' + data.ride.from + '<br>To: ' + data.ride.to + '<br>Fare: ₹' + data.ride.fare);
+            });
+
+            socket.on('request:created', (data) => {
+                log('✓ Request created successfully', 'success');
+            });
+
+            socket.on('request:accepted', (data) => {
+                log('✓ Your request was accepted!', 'success');
+                log('  Ride ID: ' + data.rideId, 'info');
+                document.getElementById('rideIdForAction').value = data.rideId;
+                showNotification('Request Accepted!', 'Customer accepted your request!<br>Ride ID: ' + data.rideId);
+            });
+
+            socket.on('request:declined', (data) => {
+                log('⚠ Request declined: ' + data.reason, 'warning');
+            });
+
+            socket.on('driver:otp-received', (data) => {
+                log('✓ OTP received: ' + data.otp, 'success');
+                log('  Expires at: ' + new Date(data.expiresAt).toLocaleString(), 'info');
+                
+                // Display OTP
+                document.getElementById('otpValue').textContent = data.otp;
+                document.getElementById('otpExpiry').textContent = 'Expires: ' + new Date(data.expiresAt).toLocaleString();
+                document.getElementById('otpDisplay').style.display = 'block';
+                
+                showNotification('OTP Received!', 'OTP: <span style="font-size: 24px; font-weight: bold;">' + data.otp + '</span><br><small>Share this with the customer verbally</small>');
+            });
+
+            socket.on('ride:otp-info', (data) => {
+                log('ℹ️ ' + data.message, 'info');
+                
+                // Display OTP info for customer
+                const infoDiv = document.getElementById('customerOtpInfo');
+                const messageDiv = document.getElementById('customerOtpMessage');
+                const expiryDiv = document.getElementById('customerOtpExpiry');
+                
+                messageDiv.textContent = data.message;
+                if (data.expiresAt) {
+                    expiryDiv.textContent = 'OTP expires: ' + new Date(data.expiresAt).toLocaleString();
+                }
+                infoDiv.style.display = 'block';
+                
+                showNotification('OTP Info', data.message);
+            });
+
+            socket.on('ride:start-success', (data) => {
+                log('✓ Ride started successfully!', 'success');
+                log('  ' + data.message, 'info');
+                log('  🌐 Location sharing is now ACTIVE', 'success');
+                
+                // Clear OTP fields
+                document.getElementById('otpInput').value = '';
+                document.getElementById('otpDisplay').style.display = 'none';
+                
+                // Start continuous location tracking for driver
+                if (currentUserId) {
+                    log('→ Initializing continuous location tracking...', 'info');
+                    startLocationTracking();
+                } else {
+                    log('⚠ Cannot start location tracking: User ID not set', 'warning');
+                }
+                
+                showNotification('Ride Started!', data.message + '<br>Location sharing active');
+            });
+
+            // Ride updates events
+            socket.on('rides:subscribed', (data) => {
+                log('✓ Subscribed to ride updates: ' + data.city, 'success');
+            });
+
+            socket.on('rides:list', (data) => {
+                log('✓ Received ' + data.count + ' available rides', 'success');
+                renderRides(data.rides);
+            });
+
+            socket.on('ride:new', (data) => {
+                const distanceText = data.distance ? ` (${data.distance.toFixed(1)} km away)` : '';
+                log('🆕 New ride available' + distanceText + ': ' + data.ride.from + ' → ' + data.ride.to, 'success');
+                if (data.message) {
+                    log('  ' + data.message, 'info');
+                }
+                addNewRide(data.ride);
+            });
+
+            socket.on('ride:updated', (data) => {
+                log('🔄 Ride updated: ' + data.rideId + ' - ' + data.rideStatus, 'info');
+                updateRideStatus(data.rideId, data.rideStatus, data.message);
+            });
+
+            // Error handling
+            socket.on('error', (error) => {
+                log('✗ Error: ' + error.message, 'error');
+                alert('Error: ' + error.message);
+            });
+        }
+
+        // UI Helpers
+        function switchTab(type) {
+            // Update tabs
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update content
+            document.getElementById('customer-auth').classList.remove('active');
+            document.getElementById('driver-auth').classList.remove('active');
+            document.getElementById(type + '-auth').classList.add('active');
+        }
+
+        function showNotification(title, message) {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.innerHTML = `
+                <h3>${title}</h3>
+                <p>${message}</p>
+                <button class="btn btn-primary" onclick="this.parentElement.remove()">Close</button>
+            `;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 10000);
+        }
+
+        // Helper: Calculate fare based on distance and ride type
+        function calculateFare() {
+            const distance = parseInt(document.getElementById('estimatedDistance').value) || 0;
+            const rideType = document.getElementById('rideType').value;
+            const vehicleType = document.getElementById('vehicleType').value;
+            
+            let baseFare = 0;
+            let perKmRate = 0;
+            
+            if (rideType === 'QUICKRIDE') {
+                // QUICKRIDE rates (per km)
+                switch(vehicleType) {
+                    case 'AUTO': perKmRate = 15; baseFare = 30; break;
+                    case 'BIKE': perKmRate = 12; baseFare = 25; break;
+                    case 'SEDAN': perKmRate = 20; baseFare = 50; break;
+                    case 'SUV': perKmRate = 25; baseFare = 70; break;
+                    case 'MUV': perKmRate = 28; baseFare = 80; break;
+                    default: perKmRate = 20; baseFare = 50;
+                }
+            } else {
+                // OUTSTATION rates (per km)
+                switch(vehicleType) {
+                    case 'SEDAN': perKmRate = 12; baseFare = 200; break;
+                    case 'SUV': perKmRate = 15; baseFare = 300; break;
+                    case 'MUV': perKmRate = 18; baseFare = 350; break;
+                    default: perKmRate = 12; baseFare = 200;
+                }
+            }
+            
+            const calculatedFare = baseFare + (distance * perKmRate);
+            document.getElementById('fare').value = calculatedFare;
+            document.getElementById('fareCalculation').textContent = 
+                `(₹${baseFare} base + ${distance}km × ₹${perKmRate}/km)`;
+        }
+
+        // Helper: Handle ride type change
+        function handleRideTypeChange() {
+            const rideType = document.getElementById('rideType').value;
+            const pickupDateTimeInput = document.getElementById('pickupDateTime');
+            const vehicleTypeSelect = document.getElementById('vehicleType');
+            
+            if (rideType === 'OUTSTATION') {
+                // For OUTSTATION, require advance booking (at least 2 hours from now)
+                const minDateTime = new Date();
+                minDateTime.setHours(minDateTime.getHours() + 2);
+                pickupDateTimeInput.min = minDateTime.toISOString().slice(0, 16);
+                pickupDateTimeInput.required = true;
+                
+                // Disable AUTO and BIKE for OUTSTATION
+                Array.from(vehicleTypeSelect.options).forEach(option => {
+                    if (option.value === 'AUTO' || option.value === 'BIKE') {
+                        option.disabled = true;
+                        option.style.color = '#999';
+                    } else {
+                        option.disabled = false;
+                        option.style.color = '';
+                    }
+                });
+                
+                // Auto-select SEDAN if AUTO/BIKE is currently selected
+                if (vehicleTypeSelect.value === 'AUTO' || vehicleTypeSelect.value === 'BIKE') {
+                    vehicleTypeSelect.value = 'SEDAN';
+                }
+                
+                log('💡 OUTSTATION: Advance booking (2+ hours), nationwide search (100km radius)', 'info');
+            } else {
+                // For QUICKRIDE, allow immediate booking
+                pickupDateTimeInput.removeAttribute('min');
+                pickupDateTimeInput.required = false;
+                
+                // Enable all vehicle types
+                Array.from(vehicleTypeSelect.options).forEach(option => {
+                    option.disabled = false;
+                    option.style.color = '';
+                });
+                
+                log('💡 QUICKRIDE: Immediate booking, local search (10km radius)', 'info');
+            }
+            
+            calculateFare();
+        }
+
+        // Helper: Validate pickup time
+        function validatePickupTime() {
+            const rideType = document.getElementById('rideType').value;
+            const pickupDateTime = new Date(document.getElementById('pickupDateTime').value);
+            const now = new Date();
+            
+            if (rideType === 'OUTSTATION') {
+                const minTime = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours from now
+                if (pickupDateTime < minTime) {
+                    alert('OUTSTATION rides require at least 2 hours advance booking');
+                    document.getElementById('pickupDateTime').value = minTime.toISOString().slice(0, 16);
+                }
+            }
+        }
+
+        // Auto-connect on load
+        window.onload = () => {
+            log('🚀 WebSocket Testing Interface loaded', 'info');
+            log('💡 Click "Connect" to start testing', 'info');
+            
+            // Set default pickup time to current time
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('pickupDateTime').value = now.toISOString().slice(0, 16);
+            
+            // Initialize fare calculation
+            calculateFare();
+        };
+    </script>
+</body>
+</html>

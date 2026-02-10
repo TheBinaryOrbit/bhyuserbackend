@@ -5,16 +5,59 @@ import { User } from "../models/user.model.js";
 import { Ride } from "../models/rides.js";
 
 /**
+ * Check if user has any active requests (PENDING or APPROVED)
+ * @param {String} userId - The user ID
+ * @returns {Promise<Boolean>} True if user has active requests
+ */
+export const hasUserActiveRequest = async (userId) => {
+    try {
+        const count = await Request.countDocuments({
+            requestRaisedBy: userId,
+            requestStatus: { $in: ['PENDING', 'APPROVED'] }
+        });
+        
+        return count > 0;
+    } catch (error) {
+        throw new Error(`Error checking user active requests: ${error.message}`);
+    }
+};
+
+/**
+ * Cancel a request (user-initiated cancellation that declines all requests for the ride)
+ * @param {String} requestId - The request ID  
+ * @param {String} reason - Optional reason for cancellation
+ * @returns {Promise<Object>} Cancelled request with declined requests info
+ */
+export const cancelRequest = async (requestId, reason = null) => {
+    try {
+        return await declineRequest(requestId, reason || 'Request cancelled by user', true);
+    } catch (error) {
+        throw new Error(`Error cancelling request: ${error.message}`);
+    }
+};
+
+/**
  * Create a new request
  * @param {Object} requestData - The request data
  * @returns {Promise<Object>} The created request
  */
 export const createRequest = async (requestData) => {
     try {
+        // Check if user has any active requests (PENDING or APPROVED)
+        const hasActiveRequest = await hasUserActiveRequest(requestData.requestRaisedBy);
+        
+        if (hasActiveRequest) {
+            throw new Error('You already have an active request. Please complete or cancel your current request before creating a new one.');
+        }
+        
         const request = new Request(requestData);
         await request.save();
         return await request.populate(['driver', 'vehicle', 'requestRaisedBy', 'requestedFor']);
     } catch (error) {
+        // Re-throw validation errors as-is, wrap other errors
+        if (error.message.includes('already have an active request')) {
+            throw error;
+        }
         throw new Error(`Error creating request: ${error.message}`);
     }
 };
@@ -205,12 +248,13 @@ export const approveRequest = async (requestId) => {
 };
 
 /**
- * Decline a request
+ * Decline a request and optionally decline all other requests for the same ride
  * @param {String} requestId - The request ID
  * @param {String} reason - Optional reason for declining
- * @returns {Promise<Object>} Declined request
+ * @param {Boolean} declineAllForRide - Whether to decline all other requests for the same ride
+ * @returns {Promise<Object>} Declined request with additional info
  */
-export const declineRequest = async (requestId, reason = null) => {
+export const declineRequest = async (requestId, reason = null, declineAllForRide = false) => {
     try {
         const request = await Request.findById(requestId);
         
@@ -228,11 +272,36 @@ export const declineRequest = async (requestId, reason = null) => {
         }
         await request.save();
         
-        return await request.populate(['driver', 'vehicle', 'requestRaisedBy', 'requestedFor']);
+        let declinedOthersCount = 0;
+        
+        // If requested, decline all other pending requests for the same ride
+        if (declineAllForRide && request.requestedFor) {
+            const declineResult = await Request.updateMany(
+                {
+                    requestedFor: request.requestedFor,
+                    _id: { $ne: requestId },
+                    requestStatus: { $in: ['PENDING', 'APPROVED'] }
+                },
+                {
+                    requestStatus: 'DECLINED',
+                    declineReason: reason || 'User cancelled their request'
+                }
+            );
+            declinedOthersCount = declineResult.modifiedCount;
+        }
+        
+        const populatedRequest = await request.populate(['driver', 'vehicle', 'requestRaisedBy', 'requestedFor']);
+        
+        return {
+            request: populatedRequest,
+            declinedOthersCount
+        };
     } catch (error) {
         throw new Error(`Error declining request: ${error.message}`);
     }
 };
+
+
 
 /**
  * Complete a request
@@ -437,5 +506,40 @@ export const bulkDeclineRequests = async (requestIds) => {
         };
     } catch (error) {
         throw new Error(`Error bulk declining requests: ${error.message}`);
+    }
+};
+
+/**
+ * Get active requests by user (PENDING or APPROVED requests)
+ * @param {String} userId - The user ID
+ * @returns {Promise<Array>} List of active requests
+ */
+export const getActiveRequestsByUser = async (userId) => {
+    try {
+        console.log(`Fetching active requests for user ${userId}...`);
+        const requests = await Request.find({ 
+            requestRaisedBy: userId,
+            requestStatus: { $in: ['PENDING', 'APPROVED'] },
+        })
+            .populate('driver')
+            .populate('vehicle')
+            .populate('requestRaisedBy')
+            .populate({
+                path: 'requestedFor',
+                match  : {
+                    rideStatus: { $in: ['PENDING', 'ACCEPTED', 'ONGOING'] }
+                },
+                populate: {
+                    path: 'bookedBy',
+                    model: 'Customer'
+                }
+            })
+            .sort({ createdAt: -1 });
+
+                    
+        return requests.filter(req => req.requestedFor !== null); // Filter out requests where the ride doesn't match the status criteria
+    } catch (error) {
+        console.error(`Error fetching active requests for user ${userId}:`, error);
+        throw new Error(`Error fetching active user requests: ${error.message}`);
     }
 };
