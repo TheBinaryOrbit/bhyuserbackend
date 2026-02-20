@@ -12,8 +12,7 @@ import {
     defaultRide
 } from '../service/ride.service.js';
 import { 
-    createRequest, 
-    updateRequestStatus,
+    createRequest,
     getRequestsByRide,
     approveRequest,
     declineRequest,
@@ -381,48 +380,29 @@ export const initializeSocket = (server) => {
                     }
                 });
 
-                // Set timeout based on ride type
-                if (timeout > 0) {
+                // Set timeout only for QUICKRIDE (no timeout for OUTSTATION)
+                if (timeout > 0 && ride.rideType === 'QUICKRIDE') {
                     const timeoutId = setTimeout(async () => {
                         try {
                             const currentRide = await getRideById(ride._id.toString());
                             
                             if (currentRide.rideStatus === 'PENDING') {
                                 // QUICKRIDE: Default if no acceptance (automatic cancellation)
-                                // OUTSTATION: Cancel if no acceptance (advance booking)
-                                if (ride.rideType === 'QUICKRIDE') {
-                                    await defaultRide(ride._id.toString(), 'No driver found within 3-minute timeout');
-                                    
-                                    io.to(`ride:${ride._id}`).emit('ride:timeout', {
-                                        rideId: ride._id,
-                                        message: 'Ride defaulted - No driver found within 3 minutes',
-                                        status: 'DEFAULTED',
-                                        rideType: ride.rideType
-                                    });
-                                    
-                                    // Notify all owners
-                                    io.to('rides:all').emit('ride:updated', {
-                                        rideId: ride._id,
-                                        rideStatus: 'DEFAULTED',
-                                        message: 'Ride defaulted due to timeout'
-                                    });
-                                } else {
-                                    await updateRideStatus(ride._id.toString(), 'CANCELLED');
-                                    
-                                    io.to(`ride:${ride._id}`).emit('ride:timeout', {
-                                        rideId: ride._id,
-                                        message: 'No driver found within 1-hour timeout',
-                                        status: 'CANCELLED',
-                                        rideType: ride.rideType
-                                    });
-                                    
-                                    // Notify all owners
-                                    io.to('rides:all').emit('ride:updated', {
-                                        rideId: ride._id,
-                                        rideStatus: 'CANCELLED',
-                                        message: 'Ride cancelled due to timeout'
-                                    });
-                                }
+                                await defaultRide(ride._id.toString(), 'No driver found within 3-minute timeout');
+                                
+                                io.to(`ride:${ride._id}`).emit('ride:timeout', {
+                                    rideId: ride._id,
+                                    message: 'Ride defaulted - No driver found within 3 minutes',
+                                    status: 'DEFAULTED',
+                                    rideType: ride.rideType
+                                });
+                                
+                                // Notify all owners
+                                io.to('rides:all').emit('ride:updated', {
+                                    rideId: ride._id,
+                                    rideStatus: 'DEFAULTED',
+                                    message: 'Ride defaulted due to timeout'
+                                });
 
                                 // Clean up
                                 rideTimeouts.delete(ride._id.toString());
@@ -453,7 +433,8 @@ export const initializeSocket = (server) => {
                     const customerSocketId = activeConnections.get(customerId);
                     if (customerSocketId) {
                         io.to(customerSocketId).emit('request:new', {
-                            request,
+                            fare : request.fare,
+                            request : request,
                             message: 'New request received for your ride'
                         });
                     } else {
@@ -540,7 +521,7 @@ export const initializeSocket = (server) => {
                 }
 
                 // Update ride status
-                await updateRideStatus(rideId, 'ACCEPTED');
+                await updateRideStatus(rideId, 'ACCEPTED' , acceptedRequest.fare , acceptedRequest.requestRaisedBy);
 
                 // Generate OTP for ride start
                 const startOtp = generateRideOTP(4);
@@ -586,15 +567,16 @@ export const initializeSocket = (server) => {
                         console.error('Error sending notification:', notifError);
                     }
                 }
-
+                console.log(`Accepted Request: ${JSON.stringify(acceptedRequest.fare)}`);
                 // Notify customer with OTP
                 socket.emit('request:accept-success', {
                     success: true,
+                    fare : acceptedRequest.fare,
+                    startOtp: startOtp,
                     request: acceptedRequest,
                     message: 'Request accepted successfully',
                     otpGenerated: true,
-                    startOtp: startOtp,
-                    startOtpExpiresAt: otpExpiresAt
+                    startOtpExpiresAt: otpExpiresAt,
                 });
 
                 // Broadcast to ride room

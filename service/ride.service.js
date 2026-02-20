@@ -115,7 +115,7 @@ export const createRide = async (rideData, customerLocation = null) => {
                 timeout = parseInt(process.env.QUICKRIDE_TIMEOUT_MS || 180000);
             } else if (rideData.rideType === 'OUTSTATION') {
                 radiusKm = parseFloat(process.env.OUTSTATION_SEARCH_RADIUS_KM || 100);
-                timeout = parseInt(process.env.OUTSTATION_TIMEOUT_MS || 3600000); // 1 hour for OUTSTATION
+                timeout = 0; // No timeout for OUTSTATION
             }
             
             nearbyDrivers = await findNearbyOnlineUsers(
@@ -144,9 +144,8 @@ export const createRide = async (rideData, customerLocation = null) => {
  */
 export const getRideById = async (rideId) => {
     try {
-        const ride = await Ride.findById(rideId)
-            .populate('bookedBy')
-            .populate('assingTo');
+        // select startOtp and startOtpExpiresAt for verification if needed
+        const ride = await Ride.findById(rideId).select('+startOtp +startOtpExpiresAt').populate('bookedBy').populate('assingTo');
         
         if (!ride) {
             throw new Error('Ride not found');
@@ -254,6 +253,8 @@ export const getRidesByCustomer = async (customerId) => {
             .populate('bookedBy')
             .populate('assingTo')
             .sort({ pickUpDateTime: -1 });
+
+            console.log(rides);
         
         return rides;
     } catch (error) {
@@ -285,9 +286,11 @@ export const getRidesByDriver = async (driverId) => {
  * @param {String} status - The new status
  * @returns {Promise<Object>} Updated ride
  */
-export const updateRideStatus = async (rideId, status) => {
+export const updateRideStatus = async (rideId, status , updatedFare , userId) => {
     try {
         const validStatuses = ['PENDING', 'ACCEPTED', 'ONGOING', 'COMPLETED', 'CANCELLED'];
+
+        console.log(`Updating ride status: rideId=${rideId}, status=${status}, updatedFare=${updatedFare}, userId=${userId}`);
         
         if (!validStatuses.includes(status)) {
             throw new Error('Invalid ride status');
@@ -295,7 +298,7 @@ export const updateRideStatus = async (rideId, status) => {
         
         const ride = await Ride.findByIdAndUpdate(
             rideId,
-            { rideStatus: status },
+            { rideStatus: status, fare: updatedFare , assingTo: userId },
             { new: true, runValidators: true }
         )
             .populate('bookedBy')
@@ -486,7 +489,7 @@ export const startRide = async (rideId, otp) => {
         ride.rideStatus = 'ONGOING';
         
         // Clear OTP after successful verification
-        ride.startOtp = undefined;
+        // ride.startOtp = undefined;
         ride.startOtpExpiresAt = undefined;
         
         await ride.save();
@@ -710,5 +713,29 @@ export const getCustomerActiveRides = async (customerId) => {
         return rides;
     } catch (error) {
         throw new Error(`Error fetching active rides: ${error.message}`);
+    }
+};
+
+/**
+ * Get recent 5 ride locations (to/drop) for a customer
+ * @param {String} customerId - The customer ID
+ * @returns {Promise<Array>} List of recent ride locations
+ */
+export const getRecentRideLocations = async (customerId) => {
+    try {
+        const rides = await Ride.find({ bookedBy: customerId })
+            .select('to from pickUpDateTime')
+            .sort({ pickUpDateTime: -1 })
+            .limit(5);
+        
+        // Map to return only to and from locations
+        const locations = rides.map(ride => ({
+            to: ride.to,
+            from: ride.from
+        }));
+        
+        return locations;
+    } catch (error) {
+        throw new Error(`Error fetching recent ride locations: ${error.message}`);
     }
 };

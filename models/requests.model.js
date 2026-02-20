@@ -31,7 +31,13 @@ const RequestSchema = new mongoose.Schema({
         type : mongoose.Schema.Types.ObjectId,
         ref : 'Ride',
         required  :true
+    },
+    declineReason : {
+        type: String,
+        trim: true
     }
+}, {
+    timestamps: true  // Automatically adds createdAt and updatedAt fields
 });
 
 export const Request = mongoose.model("Request", RequestSchema);

@@ -132,9 +132,9 @@ export const createUser = async (req, res) => {
 
 export const getCustomerProfile = async (req, res) => {
     try {
-        const cust = req.customer;
+        const customerId = req.params.customerId;
 
-        const customer = await Customer.findById(cust.id);
+        const customer = await Customer.findById(customerId);
 
         if (!customer) {
             return res.status(404).json({ error: "Customer not found." });

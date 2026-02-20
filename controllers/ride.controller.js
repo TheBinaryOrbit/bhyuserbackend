@@ -19,9 +19,10 @@ import {
     updateRideFare
 } from '../service/ride.service.js';
 import { sendSuccess, sendError } from '../utils/responseHelper.js';
+import { getActiveConnections } from '../config/socket.config.js';
 
 // Import new functions
-import { getCustomerRideHistory, getCustomerActiveRides } from '../service/ride.service.js';
+import { getCustomerRideHistory, getCustomerActiveRides, getRecentRideLocations } from '../service/ride.service.js';
 
 /**
  * Create a new ride
@@ -46,6 +47,7 @@ export const getRideByIdController = async (req, res) => {
     try {
         const { rideId } = req.params;
         const ride = await getRideById(rideId);
+        
 
         sendSuccess(res, 200, 'Ride fetched successfully', { ride });
     } catch (error) {
@@ -186,6 +188,42 @@ export const completeRideController = async (req, res) => {
         const { rideId } = req.params;
         const ride = await completeRide(rideId);
 
+        // Emit socket event to customer and driver
+        const io = req.app.get('io');
+        const activeConnections = getActiveConnections();
+        
+        if (io && activeConnections) {
+            // Emit to customer
+            const customerId = ride.bookedBy?._id?.toString() || ride.bookedBy?.toString();
+            if (customerId) {
+                const customerSocketId = activeConnections.get(customerId);
+                if (customerSocketId) {
+                    io.to(customerSocketId).emit('ride:completed-success', {
+                        rideId: ride._id,
+                        rideStatus: ride.rideStatus,
+                        message: 'Ride completed successfully',
+                        ride: ride
+                    });
+                    console.log(`✓ Emitted ride:completed-success to customer ${customerId}`);
+                }
+            }
+            
+            // Emit to driver
+            const driverId = ride.assingTo?._id?.toString() || ride.assingTo?.toString();
+            if (driverId) {
+                const driverSocketId = activeConnections.get(driverId);
+                if (driverSocketId) {
+                    io.to(driverSocketId).emit('ride:completed-success', {
+                        rideId: ride._id,
+                        rideStatus: ride.rideStatus,
+                        message: 'Ride completed successfully',
+                        ride: ride
+                    });
+                    console.log(`✓ Emitted ride:completed-success to driver ${driverId}`);
+                }
+            }
+        }
+
         sendSuccess(res, 200, 'Ride completed successfully', { ride });
     } catch (error) {
         sendError(res, error.message.includes('not found') ? 404 : 400, error.message);
@@ -206,6 +244,43 @@ export const startRideController = async (req, res) => {
         }
         
         const ride = await startRide(rideId, otp);
+
+
+        // Emit socket event to customer and driver
+        const io = req.app.get('io');
+        const activeConnections = getActiveConnections();
+        
+        if (io && activeConnections) {
+            // Emit to customer
+            const customerId = ride.bookedBy?._id?.toString() || ride.bookedBy?.toString();
+            if (customerId) {
+                const customerSocketId = activeConnections.get(customerId);
+                if (customerSocketId) {
+                    io.to(customerSocketId).emit('ride:start-success', {
+                        rideId: ride._id,
+                        rideStatus: ride.rideStatus,
+                        message: 'Ride started successfully',
+                        ride: ride
+                    });
+                    console.log(`✓ Emitted ride:start-success to customer ${customerId}`);
+                }
+            }
+            
+            // Emit to driver
+            const driverId = ride.assingTo?._id?.toString() || ride.assingTo?.toString();
+            if (driverId) {
+                const driverSocketId = activeConnections.get(driverId);
+                if (driverSocketId) {
+                    io.to(driverSocketId).emit('ride:start-success', {
+                        rideId: ride._id,
+                        rideStatus: ride.rideStatus,
+                        message: 'Ride started successfully',
+                        ride: ride
+                    });
+                    console.log(`✓ Emitted ride:start-success to driver ${driverId}`);
+                }
+            }
+        }
 
         sendSuccess(res, 200, 'Ride started successfully', { ride });
     } catch (error) {
@@ -380,6 +455,24 @@ export const getCustomerActiveRidesController = async (req, res) => {
         sendSuccess(res, 200, 'Active rides fetched successfully', { 
             count: rides.length,
             rides 
+        });
+    } catch (error) {
+        sendError(res, 500, error.message);
+    }
+};
+
+/**
+ * Get recent 5 ride locations (to/drop) for a customer
+ */
+export const getRecentRideLocationsController = async (req, res) => {
+    try {
+        const { customerId } = req.params;
+
+        const locations = await getRecentRideLocations(customerId);
+
+        sendSuccess(res, 200, 'Recent ride locations fetched successfully', { 
+            count: locations.length,
+            locations 
         });
     } catch (error) {
         sendError(res, 500, error.message);

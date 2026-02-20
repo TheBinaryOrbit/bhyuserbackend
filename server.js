@@ -7,6 +7,7 @@ import { initializeSocket } from './config/socket.config.js';
 import rideRouter from './router/ride.router.js';
 import customerRouter from './router/customer.router.js';
 import quickrideRouter from './router/quickride.router.js';
+import { declineTimedOutRequests } from './service/request.service.js';
 
 // Import models to register schemas (must be done before any database operations)
 import './models/user.model.js';
@@ -83,6 +84,27 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Set up request timeout checker (runs every 1 minute)
+const REQUEST_TIMEOUT_MINUTES = parseInt(process.env.REQUEST_TIMEOUT_MINUTES) || 5;
+const TIMEOUT_CHECK_INTERVAL = parseInt(process.env.TIMEOUT_CHECK_INTERVAL) || 60000; // 1 minute in ms
+
+setInterval(async () => {
+  try {
+    await declineTimedOutRequests(REQUEST_TIMEOUT_MINUTES);
+  } catch (error) {
+    console.error('Failed to decline timed-out requests:', error.message);
+  }
+}, TIMEOUT_CHECK_INTERVAL);
+
+// Run once on startup to clear any existing timed-out requests
+declineTimedOutRequests(REQUEST_TIMEOUT_MINUTES)
+  .then(result => {
+    if (result.declinedCount > 0) {
+      console.log(`✓ Cleared ${result.declinedCount} timed-out requests on startup`);
+    }
+  })
+  .catch(err => console.error('Failed to clear timed-out requests on startup:', err.message));
+
 // Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
@@ -90,6 +112,7 @@ server.listen(PORT, () => {
   console.log(`✓ WebSocket server initialized`);
   console.log(`✓ API endpoint: http://localhost:${PORT}/api`);
   console.log(`✓ Health check: http://localhost:${PORT}/health`);
+  console.log(`✓ Request timeout: ${REQUEST_TIMEOUT_MINUTES} minutes (checks every ${TIMEOUT_CHECK_INTERVAL/1000}s)`);
 });
 
 export { io, app, server };

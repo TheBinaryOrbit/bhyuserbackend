@@ -543,3 +543,38 @@ export const getActiveRequestsByUser = async (userId) => {
         throw new Error(`Error fetching active user requests: ${error.message}`);
     }
 };
+
+/**
+ * Decline all timed-out pending requests
+ * @param {Number} timeoutMinutes - Timeout duration in minutes (default: 5 minutes)
+ * @returns {Promise<Object>} Result with count of declined requests
+ */
+export const declineTimedOutRequests = async (timeoutMinutes = 5) => {
+    try {
+        const timeoutDate = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+        
+        const result = await Request.updateMany(
+            {
+                requestStatus: 'PENDING',
+                createdAt: { $lt: timeoutDate }
+            },
+            {
+                requestStatus: 'DECLINED',
+                declineReason: `Request timed out after ${timeoutMinutes} minutes`
+            }
+        );
+        
+        if (result.modifiedCount > 0) {
+            console.log(`Declined ${result.modifiedCount} timed-out requests`);
+        }
+        
+        return {
+            declinedCount: result.modifiedCount,
+            matchedCount: result.matchedCount,
+            timeoutMinutes
+        };
+    } catch (error) {
+        console.error('Error declining timed-out requests:', error);
+        throw new Error(`Error declining timed-out requests: ${error.message}`);
+    }
+};

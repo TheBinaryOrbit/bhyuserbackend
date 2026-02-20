@@ -19,7 +19,8 @@ import {
     findNearbyOnlineUsersController,
     updateRideFareController,
     getCustomerRideHistoryController,
-    getCustomerActiveRidesController
+    getCustomerActiveRidesController,
+    getRecentRideLocationsController
 } from '../controllers/ride.controller.js';
 import {
     createRequestController,
@@ -41,7 +42,8 @@ import {
     bulkApproveRequestsController,
     bulkDeclineRequestsController,
     getActiveRequestsByUserController,
-    checkUserActiveRequestController
+    checkUserActiveRequestController,
+    declineTimedOutRequestsController
 } from '../controllers/request.controller.js';
 
 const router = express.Router();
@@ -163,6 +165,13 @@ router.get('/rides/customer/:customerId/history', getCustomerRideHistoryControll
  * @access  Private (Customer)
  */
 router.get('/rides/customer/:customerId/active', getCustomerActiveRidesController);
+
+/**
+ * @route   GET /api/rides/customer/:customerId/recent-locations
+ * @desc    Get recent 5 ride locations (to/drop) for a customer
+ * @access  Private (Customer)
+ */
+router.get('/rides/customer/:customerId/recent-locations', getRecentRideLocationsController);
 
 /**
  * @route   DELETE /api/rides/:rideId
@@ -331,6 +340,14 @@ router.post('/requests/bulk/approve', bulkApproveRequestsController);
  * @access  Private (Admin)
  */
 router.post('/requests/bulk/decline', bulkDeclineRequestsController);
+
+/**
+ * @route   POST /api/requests/decline-timedout
+ * @desc    Manually decline all timed-out pending requests
+ * @query   timeoutMinutes (optional, default: 5)
+ * @access  Private (Admin)
+ */
+router.post('/requests/decline-timedout', declineTimedOutRequestsController);
 
 /**
  * @route   DELETE /api/requests/:requestId

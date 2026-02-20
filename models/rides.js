@@ -52,7 +52,7 @@ const RideSchema = new mongoose.Schema({
     },
     assingTo : {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'Driver',
     },
     rideStatus : {
         type: String,

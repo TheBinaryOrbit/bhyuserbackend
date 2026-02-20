@@ -19,7 +19,8 @@ import {
     bulkApproveRequests,
     bulkDeclineRequests,
     getActiveRequestsByUser,
-    hasUserActiveRequest
+    hasUserActiveRequest,
+    declineTimedOutRequests
 } from '../service/request.service.js';
 import { sendSuccess, sendError } from '../utils/responseHelper.js';
 
@@ -371,4 +372,18 @@ export const checkUserActiveRequestController = async (req, res) => {
     } catch (error) {
         sendError(res, 500, error.message);
     }
-};;
+};
+
+/**
+ * Manually decline all timed-out pending requests
+ */
+export const declineTimedOutRequestsController = async (req, res) => {
+    try {
+        const timeoutMinutes = parseInt(req.query.timeoutMinutes) || 5;
+        const result = await declineTimedOutRequests(timeoutMinutes);
+
+        sendSuccess(res, 200, 'Timed-out requests processed successfully', result);
+    } catch (error) {
+        sendError(res, 500, error.message);
+    }
+};
