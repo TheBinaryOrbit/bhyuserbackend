@@ -7,6 +7,7 @@ import { initializeSocket } from './config/socket.config.js';
 import rideRouter from './router/ride.router.js';
 import customerRouter from './router/customer.router.js';
 import quickrideRouter from './router/quickride.router.js';
+import vehicleRouter from './router/vehicle.router.js';
 import { declineTimedOutRequests } from './service/request.service.js';
 
 // Import models to register schemas (must be done before any database operations)
@@ -47,6 +48,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api', rideRouter);
 app.use('/api/customer', customerRouter);
 app.use('/api/quickride', quickrideRouter);
+app.use('/api/vehicles', vehicleRouter);
 
 // Health check route
 app.get('/health', (req, res) => {
