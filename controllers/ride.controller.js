@@ -4,6 +4,7 @@ import {
     getAllRides,
     getRidesByCustomer,
     getRidesByDriver,
+    getRidesByUser,
     updateRideStatus,
     assignDriverToRide,
     updateRide,
@@ -115,6 +116,23 @@ export const getRidesByDriverController = async (req, res) => {
         });
     } catch (error) {
         sendError(res, 500, error.message);
+    }
+};
+
+/**
+ * Get rides assigned to user's first driver
+ */
+export const getRidesByUserController = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const rides = await getRidesByUser(userId);
+
+        sendSuccess(res, 200, 'User rides fetched successfully', { 
+            count: rides.length,
+            rides 
+        });
+    } catch (error) {
+        sendError(res, error.message.includes('No driver found') ? 404 : 500, error.message);
     }
 };
 

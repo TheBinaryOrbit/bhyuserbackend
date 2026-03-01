@@ -5,6 +5,7 @@ import {
     getAllRidesController,
     getRidesByCustomerController,
     getRidesByDriverController,
+    getRidesByUserController,
     updateRideStatusController,
     assignDriverToRideController,
     updateRideController,
@@ -85,6 +86,13 @@ router.get('/rides/customer/:customerId', getRidesByCustomerController);
  * @access  Private
  */
 router.get('/rides/driver/:driverId', getRidesByDriverController);
+
+/**
+ * @route   GET /api/rides/user/:userId
+ * @desc    Get rides assigned to user's first driver
+ * @access  Private
+ */
+router.get('/rides/user/:userId', getRidesByUserController);
 
 /**
  * @route   GET /api/rides/pending/all

@@ -3,6 +3,7 @@ import { User } from "../models/user.model.js";
 import { Driver } from "../models/driver.model.js";
 import { Vehicle } from "../models/vehicle.model.js";
 import { Request } from "../models/requests.model.js";
+import { calculateDistanceFromAddresses } from "../utils/googleMaps.js";
 
 /**
  * Calculate distance between two coordinates using Haversine formula
@@ -94,30 +95,49 @@ export const findNearbyOnlineUsers = async (latitude, longitude, radiusKm = 10, 
  */
 export const createRide = async (rideData, customerLocation = null) => {
     try {
-        // Auto-determine ride type if distance info is available
-        if (customerLocation && rideData.estimatedDistance) {
+        // Calculate distance from Google Maps API if from and to addresses are provided
+        if (rideData.from && rideData.to) {
+            try {
+                const distanceInfo = await calculateDistanceFromAddresses(rideData.from, rideData.to);
+                rideData.estimatedDistance = distanceInfo.distanceKm;
+                rideData.estimatedDuration = distanceInfo.durationSeconds;
+                console.log(`Distance calculated: ${distanceInfo.distanceKm} km (${distanceInfo.durationText})`);
+            } catch (distanceError) {
+                console.error('Error calculating distance:', distanceError.message);
+                // Continue with ride creation even if distance calculation fails
+                // Use default value if not provided
+                rideData.estimatedDistance = rideData.estimatedDistance || 0;
+                rideData.estimatedDuration = rideData.estimatedDuration || 0;
+            }
+        }
+
+        // Auto-determine ride type based on calculated distance
+        if (rideData.estimatedDistance) {
             rideData.rideType = determineRideType(rideData.estimatedDistance);
         }
+
+        console.log('Creating ride with data:', rideData);
 
         const ride = new Ride(rideData);
         await ride.save();
         
         const populatedRide = await ride.populate('bookedBy');
 
-        // Find nearby online drivers based on ride type
-        let nearbyDrivers = [];
+        // Determine search parameters based on ride type
         let radiusKm = 10; // Default for QUICKRIDE
         let timeout = 180000; // 3 minutes for QUICKRIDE
         
+        if (rideData.rideType === 'QUICKRIDE') {
+            radiusKm = parseFloat(process.env.QUICKRIDE_SEARCH_RADIUS_KM || 10);
+            timeout = parseInt(process.env.QUICKRIDE_TIMEOUT_MS || 180000);
+        } else if (rideData.rideType === 'OUTSTATION') {
+            radiusKm = parseFloat(process.env.OUTSTATION_SEARCH_RADIUS_KM || 100);
+            timeout = 0; // No timeout for OUTSTATION
+        }
+
+        // Find nearby online drivers based on ride type
+        let nearbyDrivers = [];
         if (customerLocation) {
-            if (rideData.rideType === 'QUICKRIDE') {
-                radiusKm = parseFloat(process.env.QUICKRIDE_SEARCH_RADIUS_KM || 10);
-                timeout = parseInt(process.env.QUICKRIDE_TIMEOUT_MS || 180000);
-            } else if (rideData.rideType === 'OUTSTATION') {
-                radiusKm = parseFloat(process.env.OUTSTATION_SEARCH_RADIUS_KM || 100);
-                timeout = 0; // No timeout for OUTSTATION
-            }
-            
             nearbyDrivers = await findNearbyOnlineUsers(
                 customerLocation.latitude,
                 customerLocation.longitude,
@@ -277,6 +297,32 @@ export const getRidesByDriver = async (driverId) => {
         return rides;
     } catch (error) {
         throw new Error(`Error fetching driver rides: ${error.message}`);
+    }
+};
+
+/**
+ * Get rides assigned to user's first driver
+ * @param {String} userId - The user ID
+ * @returns {Promise<Array>} List of rides assigned to user's first driver
+ */
+export const getRidesByUser = async (userId) => {
+    try {
+        // Find the first driver for this user
+        const driver = await Driver.findOne({ userId: userId });
+        
+        if (!driver) {
+            throw new Error('No driver found for this user');
+        }
+
+        // Get all rides assigned to this driver
+        const rides = await Ride.find({ assingTo: driver._id })
+            .populate('bookedBy')
+            .populate('assingTo')
+            .sort({ pickUpDateTime: -1 });
+        
+        return rides;
+    } catch (error) {
+        throw new Error(`Error fetching user rides: ${error.message}`);
     }
 };
 
@@ -737,5 +783,114 @@ export const getRecentRideLocations = async (customerId) => {
         return locations;
     } catch (error) {
         throw new Error(`Error fetching recent ride locations: ${error.message}`);
+    }
+};
+
+/**
+ * Check if a driver can accept a new ride based on their current accepted rides
+ * Rules:
+ * - If driver has an ACCEPTED/ONGOING QUICKRIDE: Cannot accept ANY new rides
+ * - If driver has an ACCEPTED/ONGOING OUTSTATION: Can accept QUICKRIDE + OUTSTATION (except same date)
+ * 
+ * @param {String} driverId - The driver ID
+ * @param {Object} newRide - The new ride object {rideType, pickUpDateTime}
+ * @returns {Promise<Object>} { available: boolean, reason: string }
+ */
+export const checkDriverAvailability = async (driverId, newRide) => {
+    try {
+        // Get all accepted or ongoing rides for this driver
+        const activeRides = await Ride.find({
+            assingTo: driverId,
+            rideStatus: { $in: ['ACCEPTED', 'ONGOING'] }
+        }).select('rideType pickUpDateTime rideStatus');
+
+        // If no active rides, driver is available
+        if (activeRides.length === 0) {
+            return { available: true, reason: null };
+        }
+
+        // Check each active ride
+        for (const activeRide of activeRides) {
+            // Rule 1: If driver has an active QUICKRIDE, they cannot accept ANY new rides
+            if (activeRide.rideType === 'QUICKRIDE') {
+                return {
+                    available: false,
+                    reason: 'Driver has an active QUICKRIDE and cannot accept any new rides'
+                };
+            }
+
+            // Rule 2: If driver has an active OUTSTATION
+            if (activeRide.rideType === 'OUTSTATION') {
+                // They can accept QUICKRIDE anytime
+                if (newRide.rideType === 'QUICKRIDE') {
+                    continue; // Check next active ride
+                }
+
+                // They can accept OUTSTATION, but not on the same date
+                if (newRide.rideType === 'OUTSTATION') {
+                    const activeRideDate = new Date(activeRide.pickUpDateTime).toDateString();
+                    const newRideDate = new Date(newRide.pickUpDateTime).toDateString();
+                    
+                    if (activeRideDate === newRideDate) {
+                        return {
+                            available: false,
+                            reason: `Driver already has an OUTSTATION ride on ${activeRideDate}`
+                        };
+                    }
+                }
+            }
+        }
+
+        // If we passed all checks, driver is available
+        return { available: true, reason: null };
+    } catch (error) {
+        throw new Error(`Error checking driver availability: ${error.message}`);
+    }
+};
+
+/**
+ * Check if a user (owner) can accept a new ride for ANY of their drivers
+ * @param {String} userId - The user ID
+ * @param {Object} newRide - The new ride object {rideType, pickUpDateTime}
+ * @returns {Promise<Object>} { available: boolean, reason: string, availableDrivers: Array }
+ */
+export const checkUserDriversAvailability = async (userId, newRide) => {
+    try {
+        // Get all drivers for this user
+        const { Driver } = await import('../models/driver.model.js');
+        const drivers = await Driver.find({ userId: userId });
+
+        if (drivers.length === 0) {
+            return {
+                available: false,
+                reason: 'No drivers found for this user',
+                availableDrivers: []
+            };
+        }
+
+        // Check availability for each driver
+        const availableDrivers = [];
+        for (const driver of drivers) {
+            const availability = await checkDriverAvailability(driver._id.toString(), newRide);
+            if (availability.available) {
+                availableDrivers.push(driver);
+            }
+        }
+
+        if (availableDrivers.length > 0) {
+            return {
+                available: true,
+                reason: null,
+                availableDrivers: availableDrivers
+            };
+        } else {
+            return {
+                available: false,
+                reason: 'All drivers are currently busy with active rides',
+                availableDrivers: []
+            };
+        }
+    } catch (error) {
+        throw new Error(`Error checking user drivers availability: ${error.message}`);
     }
 };

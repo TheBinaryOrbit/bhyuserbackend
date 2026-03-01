@@ -9,7 +9,9 @@ import {
     updateRideFare,
     getAllRides,
     getPendingRidesByCustomer,
-    defaultRide
+    defaultRide,
+    checkUserDriversAvailability,
+    checkDriverAvailability
 } from '../service/ride.service.js';
 import { 
     createRequest,
@@ -140,6 +142,7 @@ export const initializeSocket = (server) => {
                         rideType: ride.rideType,
                         rideStatus: ride.rideStatus,
                         estimatedDistance: ride.estimatedDistance,
+                        isLater: ride.isLater,
                         bookedBy: ride.bookedBy ? {
                             _id: ride.bookedBy._id,
                             name: ride.bookedBy.name,
@@ -316,6 +319,7 @@ export const initializeSocket = (server) => {
                     rideType: ride.rideType,
                     rideStatus: ride.rideStatus,
                     estimatedDistance: ride.estimatedDistance || estimatedDistance,
+                    isLater: ride.isLater,
                     bookedBy: ride.bookedBy ? {
                         _id: ride.bookedBy._id,
                         name: ride.bookedBy.name,
@@ -323,11 +327,35 @@ export const initializeSocket = (server) => {
                     } : null
                 };
 
-                // Notify only nearby owners about this ride
-                if (nearbyDrivers && nearbyDrivers.length > 0) {
+                // Filter nearby owners based on driver availability
+                const availableOwners = [];
+                for (const owner of nearbyDrivers || []) {
+                    try {
+                        const availability = await checkUserDriversAvailability(
+                            owner._id.toString(),
+                            {
+                                rideType: ride.rideType,
+                                pickUpDateTime: ride.pickUpDateTime
+                            }
+                        );
+                        
+                        if (availability.available) {
+                            availableOwners.push(owner);
+                        } else {
+                            console.log(`Owner ${owner._id} not available: ${availability.reason}`);
+                        }
+                    } catch (availError) {
+                        console.error(`Error checking availability for owner ${owner._id}:`, availError.message);
+                        // Include owner anyway if there's an error checking availability
+                        availableOwners.push(owner);
+                    }
+                }
+
+                // Notify only available nearby owners about this ride
+                if (availableOwners && availableOwners.length > 0) {
                     const offlineDriverTokens = [];
                     
-                    nearbyDrivers.forEach(owner => {
+                    availableOwners.forEach(owner => {
                         if (owner.socketId) {
                             // Send via socket if connected
                             io.to(owner.socketId).emit('ride:new', { 
@@ -353,15 +381,15 @@ export const initializeSocket = (server) => {
                         console.log(`Sent notification to ${offlineDriverTokens.length} offline drivers`);
                     }
                     
-                    console.log(`Notified ${nearbyDrivers.length} nearby owners about ride ${ride._id}`);
+                    console.log(`Notified ${availableOwners.length} available owners (${nearbyDrivers?.length || 0} total nearby) about ride ${ride._id}`);
                 } else {
-                    console.log(`No nearby owners found for ride ${ride._id}`);
+                    console.log(`No available owners found for ride ${ride._id} (${nearbyDrivers?.length || 0} nearby but busy)`);
                 }
 
 
 
-                // Notify nearby drivers
-                nearbyDrivers.forEach(driver => {
+                // Notify available nearby drivers
+                availableOwners.forEach(driver => {
                     if (driver.socketId) {
                         io.to(driver.socketId).emit('ride:new-request', {
                             ride: {
@@ -373,7 +401,8 @@ export const initializeSocket = (server) => {
                                 passangerCount: ride.passangerCount,
                                 fare: ride.fare,
                                 rideType: ride.rideType,
-                                estimatedDistance: ride.estimatedDistance || estimatedDistance
+                                estimatedDistance: ride.estimatedDistance || estimatedDistance,
+                                isLater: ride.isLater
                             },
                             timeout
                         });
@@ -425,6 +454,33 @@ export const initializeSocket = (server) => {
         // Owner raises request for a ride (selects their driver and vehicle)
         socket.on('request:create', async (requestData) => {
             try {
+                // Get the ride details to check driver availability
+                const ride = await getRideById(requestData.requestedFor);
+                
+                if (!ride) {
+                    return socket.emit('request:create-failed', {
+                        success: false,
+                        message: 'Ride not found'
+                    });
+                }
+
+                // Check if the driver is available for this ride
+                const availability = await checkDriverAvailability(
+                    requestData.driver,
+                    {
+                        rideType: ride.rideType,
+                        pickUpDateTime: ride.pickUpDateTime
+                    }
+                );
+
+                if (!availability.available) {
+                    return socket.emit('request:create-failed', {
+                        success: false,
+                        message: availability.reason,
+                        unavailable: true
+                    });
+                }
+
                 const request = await createRequest(requestData);
 
                 // Notify customer about new request
@@ -464,11 +520,10 @@ export const initializeSocket = (server) => {
 
                 console.log(`Request ${request._id} created for ride ${requestData.requestedFor}`);
             } catch (error) {
-                // Send specific error response for validation errors
+                // Send error response
                 socket.emit('request:create-failed', { 
                     success: false,
-                    message: error.message,
-                    isValidationError: error.message.includes('already have an active request')
+                    message: error.message
                 });
                 console.error(`Request creation failed: ${error.message}`);
             }
@@ -707,6 +762,7 @@ export const initializeSocket = (server) => {
                     rideType: updatedRide.rideType,
                     rideStatus: updatedRide.rideStatus,
                     estimatedDistance: updatedRide.estimatedDistance,
+                    isLater: updatedRide.isLater,
                     bookedBy: updatedRide.bookedBy ? {
                         _id: updatedRide.bookedBy._id,
                         name: updatedRide.bookedBy.name,

@@ -34,10 +34,6 @@ export const createRequestController = async (req, res) => {
 
         sendSuccess(res, 201, 'Request created successfully', { request });
     } catch (error) {
-        // Check if it's a validation error (active request exists)
-        if (error.message.includes('already have an active request')) {
-            return sendError(res, 400, error.message);
-        }
         sendError(res, 500, error.message);
     }
 };

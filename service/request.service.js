@@ -43,21 +43,11 @@ export const cancelRequest = async (requestId, reason = null) => {
  */
 export const createRequest = async (requestData) => {
     try {
-        // Check if user has any active requests (PENDING or APPROVED)
-        const hasActiveRequest = await hasUserActiveRequest(requestData.requestRaisedBy);
-        
-        if (hasActiveRequest) {
-            throw new Error('You already have an active request. Please complete or cancel your current request before creating a new one.');
-        }
-        
+        // Multiple active requests are now allowed for riders
         const request = new Request(requestData);
         await request.save();
         return await request.populate(['driver', 'vehicle', 'requestRaisedBy', 'requestedFor']);
     } catch (error) {
-        // Re-throw validation errors as-is, wrap other errors
-        if (error.message.includes('already have an active request')) {
-            throw error;
-        }
         throw new Error(`Error creating request: ${error.message}`);
     }
 };

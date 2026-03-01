@@ -39,6 +39,11 @@ const RideSchema = new mongoose.Schema({
         default: 0,
         min: 0
     },
+    estimatedDuration: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
     rideType : {
         type: String,
         required: true,
@@ -72,6 +77,10 @@ const RideSchema = new mongoose.Schema({
     startOtpExpiresAt: {
         type: Date,
         select: false
+    },
+    isLater : {
+        type: Boolean,
+        default: false
     }
 })
 
