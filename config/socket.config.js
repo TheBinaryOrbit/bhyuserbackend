@@ -452,7 +452,45 @@ export const initializeSocket = (server) => {
                 // Set timeout only for QUICKRIDE (no timeout for OUTSTATION)
                 if (timeout > 0 && ride.rideType === 'QUICKRIDE') {
                     // Set up timer interval to emit remaining time every 10 seconds
-                    const timerInterval = setInterval(async () => {\n                        try {\n                            const currentRide = await getRideById(ride._id.toString());\n                            \n                            // Stop timer if ride is no longer pending\n                            if (currentRide.rideStatus !== 'PENDING') {\n                                clearInterval(timerInterval);\n                                rideTimerIntervals.delete(ride._id.toString());\n                                return;\n                            }\n                            \n                            if (currentRide.expiresAt) {\n                                const { remainingSeconds, isExpired } = calculateRemainingTime(currentRide.expiresAt);\n                                \n                                if (!isExpired) {\n                                    // Emit to ride room (customer)\n                                    io.to(`ride:${ride._id}`).emit('ride:timer-update', {\n                                        rideId: ride._id,\n                                        remainingSeconds,\n                                        expiresAt: currentRide.expiresAt\n                                    });\n                                    \n                                    console.log(`Timer update for ride ${ride._id}: ${remainingSeconds}s remaining`);\n                                }\n                            }\n                        } catch (error) {\n                            console.error('Timer interval error:', error);\n                        }\n                    }, 10000); // Emit every 10 seconds\n                    \n                    rideTimerIntervals.set(ride._id.toString(), timerInterval);\n\n                    const timeoutId = setTimeout(async () => {\n                        try {\n                            const currentRide = await getRideById(ride._id.toString());\n                            \n                            if (currentRide.rideStatus === 'PENDING') {\n                                // QUICKRIDE: Default if no acceptance (automatic cancellation)\n                                await defaultRide(ride._id.toString(), 'No driver found within 5-minute timeout');
+                    const timerInterval = setInterval(async () => {
+                        try {
+                            const currentRide = await getRideById(ride._id.toString());
+                            
+                            // Stop timer if ride is no longer pending
+                            if (currentRide.rideStatus !== 'PENDING') {
+                                clearInterval(timerInterval);
+                                rideTimerIntervals.delete(ride._id.toString());
+                                return;
+                            }
+                            
+                            if (currentRide.expiresAt) {
+                                const { remainingSeconds, isExpired } = calculateRemainingTime(currentRide.expiresAt);
+                                
+                                if (!isExpired) {
+                                    // Emit to ride room (customer)
+                                    io.to(`ride:${ride._id}`).emit('ride:timer-update', {
+                                        rideId: ride._id,
+                                        remainingSeconds,
+                                        expiresAt: currentRide.expiresAt
+                                    });
+                                    
+                                    console.log(`Timer update for ride ${ride._id}: ${remainingSeconds}s remaining`);
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Timer interval error:', error);
+                        }
+                    }, 10000); // Emit every 10 seconds
+                    
+                    rideTimerIntervals.set(ride._id.toString(), timerInterval);
+
+                    const timeoutId = setTimeout(async () => {
+                        try {
+                            const currentRide = await getRideById(ride._id.toString());
+                            
+                            if (currentRide.rideStatus === 'PENDING') {
+                                // QUICKRIDE: Default if no acceptance (automatic cancellation)
+                                await defaultRide(ride._id.toString(), 'No driver found within 5-minute timeout');
                                 
                                 io.to(`ride:${ride._id}`).emit('ride:timeout', {
                                     rideId: ride._id,
@@ -469,7 +507,22 @@ export const initializeSocket = (server) => {
                                 });
 
                                 // Clean up timer interval and timeout
-                                if (rideTimerIntervals.has(ride._id.toString())) {\n                                    clearInterval(rideTimerIntervals.get(ride._id.toString()));\n                                    rideTimerIntervals.delete(ride._id.toString());\n                                }\n                                rideTimeouts.delete(ride._id.toString());\n                                rideCustomerMap.delete(ride._id.toString());\n                            }\n                        } catch (error) {\n                            console.error('Timeout error:', error);\n                        }\n                    }, timeout);\n\n                    rideTimeouts.set(ride._id.toString(), timeoutId);\n                }\n\n                console.log(`Ride ${ride._id} created by customer ${rideData.bookedBy} | Type: ${ride.rideType} | Search Radius: ${searchRadius}km | Timeout: ${timeout/1000}s | Nearby owners: ${nearbyDrivers.length}`);
+                                if (rideTimerIntervals.has(ride._id.toString())) {
+                                    clearInterval(rideTimerIntervals.get(ride._id.toString()));
+                                    rideTimerIntervals.delete(ride._id.toString());
+                                }
+                                rideTimeouts.delete(ride._id.toString());
+                                rideCustomerMap.delete(ride._id.toString());
+                            }
+                        } catch (error) {
+                            console.error('Timeout error:', error);
+                        }
+                    }, timeout);
+
+                    rideTimeouts.set(ride._id.toString(), timeoutId);
+                }
+
+                console.log(`Ride ${ride._id} created by customer ${rideData.bookedBy} | Type: ${ride.rideType} | Search Radius: ${searchRadius}km | Timeout: ${timeout/1000}s | Nearby owners: ${nearbyDrivers.length}`);
             } catch (error) {
                 socket.emit('error', { message: error.message });
             }
@@ -563,7 +616,10 @@ export const initializeSocket = (server) => {
                     clearTimeout(rideTimeouts.get(rideId));
                     rideTimeouts.delete(rideId);
                 }
-                if (rideTimerIntervals.has(rideId)) {\n                    clearInterval(rideTimerIntervals.get(rideId));\n                    rideTimerIntervals.delete(rideId);\n                }
+                if (rideTimerIntervals.has(rideId)) {
+                    clearInterval(rideTimerIntervals.get(rideId));
+                    rideTimerIntervals.delete(rideId);
+                }
 
                 // Get all other requests for this ride
                 const allRequests = await getRequestsByRide(rideId);
@@ -848,8 +904,10 @@ export const initializeSocket = (server) => {
                     clearTimeout(rideTimeouts.get(rideId));
                     rideTimeouts.delete(rideId);
                 }
-                if (rideTimerIntervals.has(rideId)) {\n                    clearInterval(rideTimerIntervals.get(rideId));\n                    rideTimerIntervals.delete(rideId);\n                }
-
+                if (rideTimerIntervals.has(rideId)) {
+                    clearInterval(rideTimerIntervals.get(rideId));
+                    rideTimerIntervals.delete(rideId);
+                }
                 // Stop location tracking if ongoing
                 const wasTracking = ongoingRides.has(rideId);
                 if (wasTracking) {
@@ -1206,7 +1264,56 @@ export const initializeSocket = (server) => {
         });
 
         // Get remaining time for a ride (useful for reconnection or manual check)
-        socket.on('ride:get-remaining-time', async ({ rideId }) => {\n            try {\n                const ride = await getRideById(rideId);\n                \n                if (!ride) {\n                    return socket.emit('error', { message: 'Ride not found' });\n                }\n                \n                if (ride.rideType !== 'QUICKRIDE') {\n                    return socket.emit('ride:no-timer', {\n                        rideId,\n                        message: 'This ride type does not have a timer'\n                    });\n                }\n                \n                if (ride.rideStatus !== 'PENDING') {\n                    return socket.emit('ride:no-timer', {\n                        rideId,\n                        rideStatus: ride.rideStatus,\n                        message: 'Timer is only active for pending rides'\n                    });\n                }\n                \n                if (!ride.expiresAt) {\n                    return socket.emit('error', { message: 'No expiration time set for this ride' });\n                }\n                \n                const { remainingSeconds, isExpired } = calculateRemainingTime(ride.expiresAt);\n                \n                if (isExpired) {\n                    socket.emit('ride:timer-expired', {\n                        rideId,\n                        message: 'Ride timer has expired'\n                    });\n                } else {\n                    socket.emit('ride:remaining-time', {\n                        rideId,\n                        remainingSeconds,\n                        expiresAt: ride.expiresAt,\n                        rideStatus: ride.rideStatus\n                    });\n                }\n                \n                console.log(`Sent remaining time for ride ${rideId}: ${remainingSeconds}s`);\n            } catch (error) {\n                socket.emit('error', { message: error.message });\n            }\n        });\n\n        // Handle disconnection
+        socket.on('ride:get-remaining-time', async ({ rideId }) => {
+            try {
+                const ride = await getRideById(rideId);
+                
+                if (!ride) {
+                    return socket.emit('error', { message: 'Ride not found' });
+                }
+                
+                if (ride.rideType !== 'QUICKRIDE') {
+                    return socket.emit('ride:no-timer', {
+                        rideId,
+                        message: 'This ride type does not have a timer'
+                    });
+                }
+                
+                if (ride.rideStatus !== 'PENDING') {
+                    return socket.emit('ride:no-timer', {
+                        rideId,
+                        rideStatus: ride.rideStatus,
+                        message: 'Timer is only active for pending rides'
+                    });
+                }
+                
+                if (!ride.expiresAt) {
+                    return socket.emit('error', { message: 'No expiration time set for this ride' });
+                }
+                
+                const { remainingSeconds, isExpired } = calculateRemainingTime(ride.expiresAt);
+                
+                if (isExpired) {
+                    socket.emit('ride:timer-expired', {
+                        rideId,
+                        message: 'Ride timer has expired'
+                    });
+                } else {
+                    socket.emit('ride:remaining-time', {
+                        rideId,
+                        remainingSeconds,
+                        expiresAt: ride.expiresAt,
+                        rideStatus: ride.rideStatus
+                    });
+                }
+                
+                console.log(`Sent remaining time for ride ${rideId}: ${remainingSeconds}s`);
+            } catch (error) {
+                socket.emit('error', { message: error.message });
+            }
+        });
+
+        // Handle disconnection
         socket.on('disconnect', async () => {
             try {
                 if (socket.userId) {
@@ -1216,7 +1323,23 @@ export const initializeSocket = (server) => {
                 } else if (socket.customerId) {
                     // DO NOT auto-default rides - keep timer running even when customer disconnects
                     // Timer will continue and user can reconnect to see remaining time
-                    try {\n                        const pendingRides = await getPendingRidesByCustomer(socket.customerId);\n                        \n                        for (const ride of pendingRides) {\n                            if (ride.rideType === 'QUICKRIDE' && ride.rideStatus === 'PENDING' && ride.expiresAt) {\n                                const { remainingSeconds } = calculateRemainingTime(ride.expiresAt);\n                                console.log(`Customer ${socket.customerId} disconnected with pending QUICKRIDE ${ride._id} - Timer continues: ${remainingSeconds}s remaining`);\n                            }\n                        }\n                    } catch (rideError) {\n                        console.error('Error logging pending rides on disconnect:', rideError);\n                    }\n                    \n                    activeConnections.delete(socket.customerId);\n                    console.log(`Customer ${socket.customerId} disconnected`);\n                }\n            } catch (error) {
+                    try {
+                        const pendingRides = await getPendingRidesByCustomer(socket.customerId);
+                        
+                        for (const ride of pendingRides) {
+                            if (ride.rideType === 'QUICKRIDE' && ride.rideStatus === 'PENDING' && ride.expiresAt) {
+                                const { remainingSeconds } = calculateRemainingTime(ride.expiresAt);
+                                console.log(`Customer ${socket.customerId} disconnected with pending QUICKRIDE ${ride._id} - Timer continues: ${remainingSeconds}s remaining`);
+                            }
+                        }
+                    } catch (rideError) {
+                        console.error('Error logging pending rides on disconnect:', rideError);
+                    }
+                    
+                    activeConnections.delete(socket.customerId);
+                    console.log(`Customer ${socket.customerId} disconnected`);
+                }
+            } catch (error) {
                 console.error('Disconnect error:', error);
             }
         });
