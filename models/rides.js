@@ -81,7 +81,13 @@ const RideSchema = new mongoose.Schema({
     isLater : {
         type: Boolean,
         default: false
+    },
+    expiresAt: {
+        type: Date,
+        index: true // Index for efficient queries
     }
+}, {
+    timestamps: true // Adds createdAt and updatedAt
 })
 
 export const Ride = mongoose.model("Ride", RideSchema);

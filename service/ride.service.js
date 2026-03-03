@@ -125,11 +125,15 @@ export const createRide = async (rideData, customerLocation = null) => {
 
         // Determine search parameters based on ride type
         let radiusKm = 10; // Default for QUICKRIDE
-        let timeout = 180000; // 3 minutes for QUICKRIDE
+        let timeout = 300000; // 5 minutes for QUICKRIDE (changed from 3 minutes)
         
         if (rideData.rideType === 'QUICKRIDE') {
             radiusKm = parseFloat(process.env.QUICKRIDE_SEARCH_RADIUS_KM || 10);
-            timeout = parseInt(process.env.QUICKRIDE_TIMEOUT_MS || 180000);
+            timeout = parseInt(process.env.QUICKRIDE_TIMEOUT_MS || 300000); // 5 minutes default
+            
+            // Set expiresAt timestamp for quickrides
+            const expiresAt = new Date(Date.now() + timeout);
+            await Ride.findByIdAndUpdate(ride._id, { expiresAt });
         } else if (rideData.rideType === 'OUTSTATION') {
             radiusKm = parseFloat(process.env.OUTSTATION_SEARCH_RADIUS_KM || 100);
             timeout = 0; // No timeout for OUTSTATION
@@ -160,7 +164,7 @@ export const createRide = async (rideData, customerLocation = null) => {
 /**
  * Get ride by ID
  * @param {String} rideId - The ride ID
- * @returns {Promise<Object>} The ride details
+ * @returns {Promise<Object>} The ride details with vehicle information
  */
 export const getRideById = async (rideId) => {
     try {
@@ -171,7 +175,20 @@ export const getRideById = async (rideId) => {
             throw new Error('Ride not found');
         }
         
-        return ride;
+        // Get vehicle information from the accepted request
+        const acceptedRequest = await Request.findOne({ 
+            requestedFor: rideId, 
+            requestStatus: 'APPROVED' 
+        }).populate('vehicle').populate('driver');
+        
+        // Add vehicle and driver info to ride object if request exists
+        const rideObject = ride.toObject();
+        if (acceptedRequest) {
+            rideObject.vehicle = acceptedRequest.vehicle;
+            rideObject.driverDetails = acceptedRequest.driver;
+        }
+        
+        return rideObject;
     } catch (error) {
         throw new Error(`Error fetching ride: ${error.message}`);
     }
