@@ -35,6 +35,8 @@ const rideCustomerMap = new Map();
 const ongoingRides = new Map();
 // Store timer intervals for emitting remaining time: rideId -> intervalId
 const rideTimerIntervals = new Map();
+// Store request timeouts for auto-decline: requestId -> timeoutId
+const requestTimeouts = new Map();
 
 /**
  * Calculate remaining time for a ride
@@ -129,6 +131,30 @@ export const initializeSocket = (server) => {
                     }
                 } catch (rideError) {
                     console.error('Error checking pending rides on reconnect:', rideError);
+                }
+
+                // Send pending driver requests for all active rides
+                try {
+                    const activeRides = await Ride.find({ 
+                        bookedBy: customerId, 
+                        rideStatus: 'PENDING' 
+                    });
+                    
+                    for (const ride of activeRides) {
+                        const pendingRequests = await getRequestsByRide(ride._id.toString());
+                        const activePendingRequests = pendingRequests.filter(req => req.requestStatus === 'PENDING');
+                        
+                        for (const request of activePendingRequests) {
+                            socket.emit('request:new', {
+                                fare: request.fare,
+                                request: request,
+                                message: 'Pending request from reconnection'
+                            });
+                            console.log(`Sent pending request ${request._id} to reconnected customer ${customerId} for ride ${ride._id}`);
+                        }
+                    }
+                } catch (requestError) {
+                    console.error('Error sending pending requests on reconnect:', requestError);
                 }
 
                 console.log(`Customer ${customerId} connected with socket ${socket.id}`);
@@ -588,6 +614,39 @@ export const initializeSocket = (server) => {
                     }
                 }
 
+                // Set 30-second auto-decline timeout
+                const autoDeclineTimeout = setTimeout(async () => {
+                    try {
+                        const currentRequest = await Request.findById(request._id);
+                        if (currentRequest && currentRequest.requestStatus === 'PENDING') {
+                            currentRequest.requestStatus = 'DECLINED';
+                            currentRequest.declineReason = 'Auto-declined after 30 seconds (no response)';
+                            await currentRequest.save();
+                            
+                            // Remove timeout from map
+                            requestTimeouts.delete(request._id.toString());
+                            
+                            // Notify driver using existing request:declined event (silent to customer)
+                            const driverUserId = currentRequest.requestRaisedBy;
+                            const driverSocketId = activeConnections.get(driverUserId.toString());
+                            if (driverSocketId) {
+                                io.to(driverSocketId).emit('request:declined', {
+                                    requestId: request._id,
+                                    rideId: requestData.requestedFor,
+                                    reason: 'Request expired after 30 seconds - no customer response'
+                                });
+                            }
+                            
+                            console.log(`Request ${request._id} auto-declined after 30 seconds`);
+                        }
+                    } catch (error) {
+                        console.error(`Error in auto-decline timeout for request ${request._id}:`, error);
+                    }
+                }, 30000);
+                
+                // Store timeout ID so it can be cleared if request is accepted/declined
+                requestTimeouts.set(request._id.toString(), autoDeclineTimeout);
+
                 // Confirm to driver
                 socket.emit('request:created', {
                     success: true,
@@ -611,6 +670,13 @@ export const initializeSocket = (server) => {
             try {
                 const acceptedRequest = await approveRequest(requestId);
 
+                // Clear request timeout for accepted request
+                if (requestTimeouts.has(requestId)) {
+                    clearTimeout(requestTimeouts.get(requestId));
+                    requestTimeouts.delete(requestId);
+                    console.log(`Cleared auto-decline timeout for accepted request ${requestId}`);
+                }
+
                 // Clear timeout and timer interval if exists
                 if (rideTimeouts.has(rideId)) {
                     clearTimeout(rideTimeouts.get(rideId));
@@ -628,6 +694,13 @@ export const initializeSocket = (server) => {
                 for (const req of allRequests) {
                     if (req._id.toString() !== requestId && req.requestStatus === 'PENDING') {
                         await declineRequest(req._id.toString(), 'Another request was accepted');
+                        
+                        // Clear request timeout for declined request
+                        const reqIdStr = req._id.toString();
+                        if (requestTimeouts.has(reqIdStr)) {
+                            clearTimeout(requestTimeouts.get(reqIdStr));
+                            requestTimeouts.delete(reqIdStr);
+                        }
                         
                         // Notify declined drivers
                         const driverUserId = req.requestRaisedBy._id || req.requestRaisedBy;
@@ -735,6 +808,13 @@ export const initializeSocket = (server) => {
                 const result = await declineRequest(requestId, reason);
                 const declinedRequest = result.request;
 
+                // Clear request timeout for declined request
+                if (requestTimeouts.has(requestId)) {
+                    clearTimeout(requestTimeouts.get(requestId));
+                    requestTimeouts.delete(requestId);
+                    console.log(`Cleared auto-decline timeout for manually declined request ${requestId}`);
+                }
+
                 // Notify driver
                 const driverUserId = declinedRequest.requestRaisedBy._id || declinedRequest.requestRaisedBy;
                 const driverSocketId = activeConnections.get(driverUserId.toString());
@@ -784,6 +864,13 @@ export const initializeSocket = (server) => {
                 const allRequests = await getRequestsByRide(rideId);
                 for (const req of allRequests) {
                     if (req.requestStatus === 'DECLINED') {
+                        // Clear request timeout for declined request
+                        const reqIdStr = req._id.toString();
+                        if (requestTimeouts.has(reqIdStr)) {
+                            clearTimeout(requestTimeouts.get(reqIdStr));
+                            requestTimeouts.delete(reqIdStr);
+                        }
+                        
                         const driverUserId = req.requestRaisedBy._id || req.requestRaisedBy;
                         const driverSocketId = activeConnections.get(driverUserId.toString());
                         if (driverSocketId) {
