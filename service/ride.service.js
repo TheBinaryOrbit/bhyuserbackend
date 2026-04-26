@@ -45,43 +45,65 @@ export const determineRideType = (distance) => {
  */
 export const findNearbyOnlineUsers = async (latitude, longitude, radiusKm = 10, vehicleType = null) => {
     try {
-        const maxDistance = radiusKm * 1000; // Convert to meters
-        
-        const query = {
-            isOnline: true,
-            location: {
-                $near: {
-                    $geometry: {
-                        type: 'Point',
-                        coordinates: [longitude, latitude]
-                    },
-                    $maxDistance: maxDistance
-                }
-            }
-        };
-
-        const users = await User.find(query)
+        const users = await User.find({
+            'lastLocation.latitude': { $ne: null },
+            'lastLocation.longitude': { $ne: null }
+        })
             .populate('availableDrivers')
             .populate('availableVehicles')
-            .limit(parseInt(process.env.MAX_DRIVERS_TO_NOTIFY || 20))
-            .select('name phoneNumber location isOnline availableDrivers availableVehicles socketId');
+            .select('name phoneNumber location lastLocation isOnline availableDrivers availableVehicles socketId fcmToken isSendNotification');
 
-        // Calculate distance for each user
-        const usersWithDistance = users.map(user => {
+        const usersWithDistance = [];
+        const usersWithinRadius = [];
+
+        for (const user of users) {
+            const hasLastLocation = user.lastLocation?.latitude != null && user.lastLocation?.longitude != null;
+
+            if (!hasLastLocation) {
+                continue;
+            }
+
+            const userLat = Number(user.lastLocation.latitude);
+            const userLon = Number(user.lastLocation.longitude);
+
+            if (Number.isNaN(userLat) || Number.isNaN(userLon)) {
+                continue;
+            }
+
             const distance = calculateDistance(
-                latitude, 
-                longitude, 
-                user.location.coordinates[1], 
-                user.location.coordinates[0]
+                Number(latitude),
+                Number(longitude),
+                userLat,
+                userLon
             );
-            
-            return {
+
+            const userWithDistance = {
                 ...user.toObject(),
                 distanceKm: parseFloat(distance.toFixed(2))
             };
-        });
 
-        return usersWithDistance.sort((a, b) => a.distanceKm - b.distanceKm);
+            usersWithDistance.push(userWithDistance);
+
+            if (distance <= Number(radiusKm || 10)) {
+                usersWithinRadius.push(userWithDistance);
+            }
+        }
+
+        const maxUsers = parseInt(process.env.MAX_DRIVERS_TO_NOTIFY || 20);
+
+        const sortedWithinRadius = usersWithinRadius
+            .sort((a, b) => a.distanceKm - b.distanceKm)
+            .slice(0, maxUsers);
+
+        if (sortedWithinRadius.length > 0) {
+            return sortedWithinRadius;
+        }
+
+        console.log(`No users found in ${radiusKm}km radius. Falling back to all users by lastLocation distance.`);
+
+        return usersWithDistance
+            .sort((a, b) => a.distanceKm - b.distanceKm)
+            .slice(0, maxUsers);
     } catch (error) {
         throw new Error(`Error finding nearby users: ${error.message}`);
     }
@@ -807,7 +829,8 @@ export const getRecentRideLocations = async (customerId) => {
  * Check if a driver can accept a new ride based on their current accepted rides
  * Rules:
  * - If driver has an ACCEPTED/ONGOING QUICKRIDE: Cannot accept ANY new rides
- * - If driver has an ACCEPTED/ONGOING OUTSTATION: Can accept QUICKRIDE + OUTSTATION (except same date)
+ * - If driver has an ACCEPTED/ONGOING OUTSTATION: block starts 3 hours before pickup and continues until ride completion
+ * - If OUTSTATION block window has not started yet: all ride types are available
  * 
  * @param {String} driverId - The driver ID
  * @param {Object} newRide - The new ride object {rideType, pickUpDateTime}
@@ -821,44 +844,60 @@ export const checkDriverAvailability = async (driverId, newRide) => {
             rideStatus: { $in: ['ACCEPTED', 'ONGOING'] }
         }).select('rideType pickUpDateTime rideStatus');
 
+        console.log(`[Availability] Checking driver ${driverId} - Found ${activeRides.length} active rides`);
+        activeRides.forEach(r => {
+            console.log(`  - Active ride: ${r.rideType} scheduled for ${r.pickUpDateTime} (Status: ${r.rideStatus})`);
+        });
+
         // If no active rides, driver is available
         if (activeRides.length === 0) {
+            console.log(`[Availability] Driver ${driverId} is AVAILABLE (no active rides)`);
             return { available: true, reason: null };
         }
 
-        // Check each active ride
-        for (const activeRide of activeRides) {
-            // Rule 1: If driver has an active QUICKRIDE, they cannot accept ANY new rides
-            if (activeRide.rideType === 'QUICKRIDE') {
-                return {
-                    available: false,
-                    reason: 'Driver has an active QUICKRIDE and cannot accept any new rides'
-                };
+        // Check all active rides
+        const now = new Date();
+        const threeHoursInMs = 3 * 60 * 60 * 1000;
+        const nowMs = now.getTime();
+
+        // Rule 1: If driver has an active QUICKRIDE, they cannot accept ANY new rides
+        const hasActiveQuickRide = activeRides.some((ride) => ride.rideType === 'QUICKRIDE');
+        if (hasActiveQuickRide) {
+            return {
+                available: false,
+                reason: 'Driver has an active QUICKRIDE and cannot accept any new rides'
+            };
+        }
+
+        // Rule 2: Evaluate ALL active OUTSTATION rides.
+        // If current time is inside block window of any outstation ride,
+        // block new rides for the driver.
+        const outstationRides = activeRides.filter((ride) => ride.rideType === 'OUTSTATION');
+        console.log(`[Availability] Found ${outstationRides.length} OUTSTATION rides for driver ${driverId}`);
+        
+        const isBlockedByAnyOutstation = outstationRides.some((outstationRide) => {
+            const outstationPickUp = new Date(outstationRide.pickUpDateTime);
+            if (Number.isNaN(outstationPickUp.getTime())) {
+                console.log(`[Availability] Invalid date for OUTSTATION ride: ${outstationRide.pickUpDateTime}`);
+                return false;
             }
 
-            // Rule 2: If driver has an active OUTSTATION
-            if (activeRide.rideType === 'OUTSTATION') {
-                // They can accept QUICKRIDE anytime
-                if (newRide.rideType === 'QUICKRIDE') {
-                    continue; // Check next active ride
-                }
+            const blockStartTime = outstationPickUp.getTime() - threeHoursInMs;
+            const isInBlock = nowMs >= blockStartTime;
+            console.log(`[Availability] OUTSTATION ride at ${outstationPickUp} | Block starts at ${new Date(blockStartTime)} | Now ${now} | In block: ${isInBlock}`);
+            return isInBlock;
+        });
 
-                // They can accept OUTSTATION, but not on the same date
-                if (newRide.rideType === 'OUTSTATION') {
-                    const activeRideDate = new Date(activeRide.pickUpDateTime).toDateString();
-                    const newRideDate = new Date(newRide.pickUpDateTime).toDateString();
-                    
-                    if (activeRideDate === newRideDate) {
-                        return {
-                            available: false,
-                            reason: `Driver already has an OUTSTATION ride on ${activeRideDate}`
-                        };
-                    }
-                }
-            }
+        if (isBlockedByAnyOutstation) {
+            console.log(`[Availability] Driver ${driverId} is BLOCKED (OUTSTATION within 3-hour window)`);
+            return {
+                available: false,
+                reason: 'Driver has an OUTSTATION ride and cannot accept new rides from 3 hours before pickup until completion'
+            };
         }
 
         // If we passed all checks, driver is available
+        console.log(`[Availability] Driver ${driverId} is AVAILABLE (passed all checks)`);
         return { available: true, reason: null };
     } catch (error) {
         throw new Error(`Error checking driver availability: ${error.message}`);

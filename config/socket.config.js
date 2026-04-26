@@ -21,8 +21,11 @@ import {
     cancelRequest
 } from '../service/request.service.js';
 import { generalNotification } from './notification.config.js';
+import { rideNotification } from './rideNotificaiton.js';
 import { User } from '../models/user.model.js';
 import { Ride } from '../models/rides.js';
+import { Request } from '../models/requests.model.js';
+import { Customer } from '../models/customer.model.js';
 import { generateRideOTP } from '../utils/otp.js';
 
 // Store active socket connections: userId -> socketId
@@ -52,6 +55,125 @@ const calculateRemainingTime = (expiresAt) => {
         remainingSeconds,
         isExpired: remainingMs <= 0
     };
+};
+
+/**
+ * Calculate distance in KM between two coordinates.
+ */
+const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+};
+
+/**
+ * Normalize availability reasons into concise client-facing messages.
+ */
+const getAvailabilityClientMessage = (reason) => {
+    if (!reason) {
+        return 'Driver is currently unavailable for this ride';
+    }
+
+    if (reason.includes('OUTSTATION ride and cannot accept new rides')) {
+        return 'Driver is unavailable from 3 hours before outstation pickup until that ride is completed';
+    }
+
+    return reason;
+};
+
+/**
+ * Schedule 30-second auto-decline for QUICKRIDE requests.
+ * Reused by both socket and REST request creation flows.
+ */
+export const scheduleQuickrideRequestAutoDecline = ({ io, request, requestData, ride, customerId }) => {
+    if (!io || !request || !ride || ride.rideType !== 'QUICKRIDE') {
+        return null;
+    }
+
+    const effectiveCustomerId = customerId || ride?.bookedBy?._id?.toString() || ride?.bookedBy?.toString();
+
+    const autoDeclineTimeout = setTimeout(async () => {
+        try {
+            const currentRequest = await Request.findById(request._id).populate('driver vehicle requestRaisedBy');
+            if (currentRequest && currentRequest.requestStatus === 'PENDING') {
+                currentRequest.requestStatus = 'DECLINED';
+                currentRequest.declineReason = 'Auto-declined after 30 seconds (no response)';
+                await currentRequest.save();
+
+                // Remove timeout from map
+                requestTimeouts.delete(request._id.toString());
+
+                // Notify driver
+                const driverUserId = currentRequest.requestRaisedBy._id || currentRequest.requestRaisedBy;
+                const driverSocketId = activeConnections.get(driverUserId.toString());
+                if (driverSocketId) {
+                    io.to(driverSocketId).emit('request:declined', {
+                        requestId: request._id,
+                        rideId: requestData.requestedFor,
+                        reason: 'Request expired after 30 seconds - no customer response'
+                    });
+                } else {
+                    // Send FCM notification to driver if offline
+                    try {
+                        const driver = await User.findById(driverUserId).select('fcmToken isSendNotification');
+                        if (driver && driver.fcmToken && driver.isSendNotification) {
+                            await generalNotification({
+                                userarray: [driver.fcmToken],
+                                title: 'Request Expired',
+                                body: 'Your ride request expired after 30 seconds without customer response'
+                            });
+                        }
+                    } catch (notifError) {
+                        console.error('Error sending driver notification:', notifError);
+                    }
+                }
+
+                // Notify customer about expired request
+                const customerSocketId = effectiveCustomerId ? activeConnections.get(effectiveCustomerId) : null;
+                if (customerSocketId) {
+                    io.to(customerSocketId).emit('request:expired', {
+                        requestId: request._id,
+                        rideId: requestData.requestedFor,
+                        message: 'A pending ride request has expired'
+                    });
+                } else {
+                    // Send FCM notification to customer if offline
+                    try {
+                        if (!effectiveCustomerId) {
+                            return;
+                        }
+
+                        const customer = await Customer.findById(effectiveCustomerId).select('fcmToken');
+                        if (customer && customer.fcmToken) {
+                            await generalNotification({
+                                userarray: [customer.fcmToken],
+                                title: 'Request Expired',
+                                body: 'A pending ride request has expired after 30 seconds'
+                            });
+                        }
+                    } catch (notifError) {
+                        console.error('Error sending customer notification:', notifError);
+                    }
+                }
+
+                console.log(`Request ${request._id} auto-declined after 30 seconds`);
+            }
+        } catch (error) {
+            console.error(`Error in auto-decline timeout for request ${request._id}:`, error);
+        }
+    }, 30000);
+
+    // Store timeout ID so it can be cleared if request is accepted/declined
+    requestTimeouts.set(request._id.toString(), autoDeclineTimeout);
+
+    return autoDeclineTimeout;
 };
 
 /**
@@ -397,6 +519,7 @@ export const initializeSocket = (server) => {
                 const availableOwners = [];
                 for (const owner of nearbyDrivers || []) {
                     try {
+                        console.log(`[Socket] Checking availability for owner ${owner._id} for new ${ride.rideType} ride at ${ride.pickUpDateTime}`);
                         const availability = await checkUserDriversAvailability(
                             owner._id.toString(),
                             {
@@ -406,22 +529,31 @@ export const initializeSocket = (server) => {
                         );
                         
                         if (availability.available) {
+                            console.log(`[Socket] Owner ${owner._id} is AVAILABLE - will notify`);
                             availableOwners.push(owner);
                         } else {
-                            console.log(`Owner ${owner._id} not available: ${availability.reason}`);
+                            console.log(`[Socket] Owner ${owner._id} is NOT available: ${availability.reason}`);
                         }
                     } catch (availError) {
-                        console.error(`Error checking availability for owner ${owner._id}:`, availError.message);
-                        // Include owner anyway if there's an error checking availability
-                        availableOwners.push(owner);
+                        console.error(`[Socket] Error checking availability for owner ${owner._id}:`, availError.message);
+                        // Fail closed: do not notify owner when availability cannot be verified
                     }
                 }
 
                 // Notify only available nearby owners about this ride
                 if (availableOwners && availableOwners.length > 0) {
-                    const offlineDriverTokens = [];
+                    const notificationTokens = new Set();
+                    const notifiedOwnerNames = new Set();
+                    let fcmFromNearbyPayloadCount = 0;
+                    let fcmFromDbFallbackCount = 0;
+                    let missingFcmCount = 0;
+                    let skippedByLastLocationCount = 0;
+                    let missingLastLocationCount = 0;
                     
-                    availableOwners.forEach(owner => {
+                    for (const owner of availableOwners) {
+                        const hadNearbyFcm = Boolean(owner.fcmToken);
+                        let ownerLastLocation = owner.lastLocation;
+
                         if (owner.socketId) {
                             // Send via socket if connected
                             io.to(owner.socketId).emit('ride:new', { 
@@ -429,22 +561,106 @@ export const initializeSocket = (server) => {
                                 distance: owner.distanceKm,
                                 message: `New ride ${owner.distanceKm.toFixed(1)} km away from you`
                             });
-                        } else {
-                            // Collect FCM tokens for offline users
-                            if (owner.fcmToken && owner.isSendNotification) {
-                                offlineDriverTokens.push(owner.fcmToken);
+                        }
+
+                        // Collect FCM token for push notification, fallback to DB fetch if token is not present in nearby response.
+                        let ownerFcmToken = owner.fcmToken;
+                        let canSendNotification = owner.isSendNotification;
+                        let ownerName = owner.name;
+
+                        if (
+                            !ownerFcmToken ||
+                            typeof canSendNotification === 'undefined' ||
+                            ownerLastLocation?.latitude == null ||
+                            ownerLastLocation?.longitude == null
+                        ) {
+                            try {
+                                const ownerUser = await User.findById(owner._id).select('name fcmToken isSendNotification lastLocation');
+                                if (ownerUser) {
+                                    ownerName = ownerUser.name || ownerName;
+                                    ownerFcmToken = ownerUser.fcmToken;
+                                    canSendNotification = ownerUser.isSendNotification;
+                                    ownerLastLocation = ownerUser.lastLocation;
+
+                                    if (ownerFcmToken) {
+                                        fcmFromDbFallbackCount += 1;
+                                    }
+                                }
+                            } catch (ownerFetchError) {
+                                console.error(`Error fetching owner FCM token for ${owner._id}:`, ownerFetchError.message);
                             }
                         }
-                    });
+
+                        let isWithinLastLocationRange = true;
+                        if (customerLocation?.latitude != null && customerLocation?.longitude != null) {
+                            if (ownerLastLocation?.latitude != null && ownerLastLocation?.longitude != null) {
+                                const distanceFromCustomer = calculateDistanceKm(
+                                    Number(customerLocation.latitude),
+                                    Number(customerLocation.longitude),
+                                    Number(ownerLastLocation.latitude),
+                                    Number(ownerLastLocation.longitude)
+                                );
+
+                                isWithinLastLocationRange = distanceFromCustomer <= Number(searchRadius || 10);
+                            } else {
+                                isWithinLastLocationRange = false;
+                                missingLastLocationCount += 1;
+                            }
+                        }
+
+                        if (!isWithinLastLocationRange) {
+                            skippedByLastLocationCount += 1;
+                        }
+
+                        if (ownerFcmToken && isWithinLastLocationRange) {
+                            if (hadNearbyFcm) {
+                                fcmFromNearbyPayloadCount += 1;
+                            }
+
+                            notificationTokens.add(ownerFcmToken);
+                            notifiedOwnerNames.add(ownerName || owner._id.toString());
+                        } else {
+                            missingFcmCount += 1;
+                        }
+                    }
+
+                    console.log(
+                        `FCM token fetch summary for ride ${ride._id}: totalAvailableOwners=${availableOwners.length}, uniqueTokens=${notificationTokens.size}, fromNearbyPayload=${fcmFromNearbyPayloadCount}, fromDbFallback=${fcmFromDbFallbackCount}, missingFcm=${missingFcmCount}, skippedByLastLocation=${skippedByLastLocationCount}, missingLastLocation=${missingLastLocationCount}, searchRadiusKm=${searchRadius}`
+                    );
                     
-                    // Send notification to offline drivers
-                    if (offlineDriverTokens.length > 0) {
-                        await generalNotification({
-                            userarray: offlineDriverTokens,
-                            title: 'New Ride Available',
-                            body: `New ${ride.rideType} ride from ${ride.from} to ${ride.to} - Fare: ₹${ride.fare}`
+                    // Send FCM notification to nearby available owners
+                    if (notificationTokens.size > 0) {
+                        console.log(`rideNotification users for ride ${ride._id}: ${Array.from(notifiedOwnerNames).join(', ')}`);
+
+                        const ridePayloadData = {
+                            title: 'New Ride Request 🚗',
+                            body: `Pickup: ${ride.from} → ${ride.to}`,
+                            to: String(ride.to ?? ''),
+                            pickupLocation: String(ride.from ?? ''),
+                            rideId: String(ride._id ?? ''),
+                            pickUpDateTime: ride.pickUpDateTime ? new Date(ride.pickUpDateTime).toISOString() : '',
+                            vehicleType: String(ride.vehicleType ?? ''),
+                            passangerCount: String(ride.passangerCount ?? ''),
+                            fare: String(ride.fare ?? ''),
+                            estimatedDistance: String((ride.estimatedDistance ?? estimatedDistance) ?? ''),
+                            estimatedDuration: String(ride.estimatedDuration ?? rideData?.estimatedDuration ?? ''),
+                            rideType: String(ride.rideType ?? ''),
+                            bookedBy: String(ride.bookedBy?._id ?? ride.bookedBy ?? ''),
+                            assingTo: String(ride.assingTo ?? ''),
+                            rideStatus: String(ride.rideStatus ?? ''),
+                            startOtp: String(ride.startOtp ?? ''),
+                            startOtpExpiresAt: ride.startOtpExpiresAt ? new Date(ride.startOtpExpiresAt).toISOString() : '',
+                            isLater: String(ride.isLater ?? false),
+                            expiresAt: ride.expiresAt ? new Date(ride.expiresAt).toISOString() : ''
+                        };
+
+                        await rideNotification({
+                            userarray: Array.from(notificationTokens),
+                            title: 'New Ride Request 🚗',
+                            body: `Pickup: ${ride.from} → ${ride.to}`,
+                            data: ridePayloadData
                         });
-                        console.log(`Sent notification to ${offlineDriverTokens.length} offline drivers`);
+                        console.log(`Sent notification to ${notificationTokens.size} nearby available owners: ${Array.from(notifiedOwnerNames).join(', ')}`);
                     }
                     
                     console.log(`Notified ${availableOwners.length} available owners (${nearbyDrivers?.length || 0} total nearby) about ride ${ride._id}`);
@@ -477,7 +693,7 @@ export const initializeSocket = (server) => {
 
                 // Set timeout only for QUICKRIDE (no timeout for OUTSTATION)
                 if (timeout > 0 && ride.rideType === 'QUICKRIDE') {
-                    // Set up timer interval to emit remaining time every 10 seconds
+                    // Set up timer interval to emit remaining time every 1 seconds
                     const timerInterval = setInterval(async () => {
                         try {
                             const currentRide = await getRideById(ride._id.toString());
@@ -506,7 +722,7 @@ export const initializeSocket = (server) => {
                         } catch (error) {
                             console.error('Timer interval error:', error);
                         }
-                    }, 10000); // Emit every 10 seconds
+                    }, 1000); // Emit every 1 seconds
                     
                     rideTimerIntervals.set(ride._id.toString(), timerInterval);
 
@@ -518,12 +734,32 @@ export const initializeSocket = (server) => {
                                 // QUICKRIDE: Default if no acceptance (automatic cancellation)
                                 await defaultRide(ride._id.toString(), 'No driver found within 5-minute timeout');
                                 
+                                const customerId = rideCustomerMap.get(ride._id.toString());
+                                const customerSocketId = activeConnections.get(customerId);
+                                
                                 io.to(`ride:${ride._id}`).emit('ride:timeout', {
                                     rideId: ride._id,
                                     message: 'Ride defaulted - No driver found within 5 minutes',
                                     status: 'DEFAULTED',
                                     rideType: ride.rideType
                                 });
+                                
+                                // Send FCM notification to customer if offline
+                                if (!customerSocketId && customerId) {
+                                    try {
+                                        const customer = await Customer.findById(customerId).select('fcmToken');
+                                        if (customer && customer.fcmToken) {
+                                            await generalNotification({
+                                                userarray: [customer.fcmToken],
+                                                title: 'Ride Expired',
+                                                body: `No driver found for your ride from ${currentRide.from} to ${currentRide.to} within 5 minutes`
+                                            });
+                                            console.log(`Sent timeout notification to offline customer ${customerId}`);
+                                        }
+                                    } catch (notifError) {
+                                        console.error('Error sending customer timeout notification:', notifError);
+                                    }
+                                }
                                 
                                 // Notify all owners
                                 io.to('rides:all').emit('ride:updated', {
@@ -579,7 +815,7 @@ export const initializeSocket = (server) => {
                 if (!availability.available) {
                     return socket.emit('request:create-failed', {
                         success: false,
-                        message: availability.reason,
+                        message: getAvailabilityClientMessage(availability.reason),
                         unavailable: true
                     });
                 }
@@ -587,7 +823,7 @@ export const initializeSocket = (server) => {
                 const request = await createRequest(requestData);
 
                 // Notify customer about new request
-                const customerId = rideCustomerMap.get(requestData.requestedFor);
+                const customerId = rideCustomerMap.get(requestData.requestedFor) || ride?.bookedBy?._id?.toString() || ride?.bookedBy?.toString();
                 if (customerId) {
                     const customerSocketId = activeConnections.get(customerId);
                     if (customerSocketId) {
@@ -599,14 +835,14 @@ export const initializeSocket = (server) => {
                     } else {
                         // Send notification if customer is offline
                         try {
-                            const { Customer } = await import('../models/customer.model.js');
                             const customer = await Customer.findById(customerId).select('fcmToken');
                             if (customer && customer.fcmToken) {
                                 await generalNotification({
                                     userarray: [customer.fcmToken],
                                     title: 'New Ride Request',
-                                    body: 'A driver has requested to take your ride'
+                                    body: `A driver has requested to take your ride from ${ride.from} to ${ride.to} - Fare: ₹${request.fare}`
                                 });
+                                console.log(`Sent new request notification to offline customer ${customerId}`);
                             }
                         } catch (notifError) {
                             console.error('Error sending notification:', notifError);
@@ -614,38 +850,14 @@ export const initializeSocket = (server) => {
                     }
                 }
 
-                // Set 30-second auto-decline timeout
-                const autoDeclineTimeout = setTimeout(async () => {
-                    try {
-                        const currentRequest = await Request.findById(request._id);
-                        if (currentRequest && currentRequest.requestStatus === 'PENDING') {
-                            currentRequest.requestStatus = 'DECLINED';
-                            currentRequest.declineReason = 'Auto-declined after 30 seconds (no response)';
-                            await currentRequest.save();
-                            
-                            // Remove timeout from map
-                            requestTimeouts.delete(request._id.toString());
-                            
-                            // Notify driver using existing request:declined event (silent to customer)
-                            const driverUserId = currentRequest.requestRaisedBy;
-                            const driverSocketId = activeConnections.get(driverUserId.toString());
-                            if (driverSocketId) {
-                                io.to(driverSocketId).emit('request:declined', {
-                                    requestId: request._id,
-                                    rideId: requestData.requestedFor,
-                                    reason: 'Request expired after 30 seconds - no customer response'
-                                });
-                            }
-                            
-                            console.log(`Request ${request._id} auto-declined after 30 seconds`);
-                        }
-                    } catch (error) {
-                        console.error(`Error in auto-decline timeout for request ${request._id}:`, error);
-                    }
-                }, 30000);
-                
-                // Store timeout ID so it can be cleared if request is accepted/declined
-                requestTimeouts.set(request._id.toString(), autoDeclineTimeout);
+                // Set 30-second auto-decline timeout only for QUICKRIDE requests
+                scheduleQuickrideRequestAutoDecline({
+                    io,
+                    request,
+                    requestData,
+                    ride,
+                    customerId
+                });
 
                 // Confirm to driver
                 socket.emit('request:created', {
@@ -788,6 +1000,26 @@ export const initializeSocket = (server) => {
                     startOtpExpiresAt: otpExpiresAt,
                 });
 
+                // Send FCM notification to customer about acceptance (if offline)
+                const customerId = rideCustomerMap.get(rideId);
+                const customerSocketId = activeConnections.get(customerId);
+                if (!customerSocketId && customerId) {
+                    try {
+                        const customer = await Customer.findById(customerId).select('fcmToken');
+                        if (customer && customer.fcmToken) {
+                            const driverName = acceptedRequest.driver.name || 'A driver';
+                            await generalNotification({
+                                userarray: [customer.fcmToken],
+                                title: 'Request Accepted!',
+                                body: `${driverName} will be your driver. Your OTP is: ${startOtp}`
+                            });
+                            console.log(`Sent acceptance confirmation to offline customer ${customerId}`);
+                        }
+                    } catch (notifError) {
+                        console.error('Error sending customer acceptance notification:', notifError);
+                    }
+                }
+
                 // Broadcast to ride room
                 io.to(`ride:${rideId}`).emit('ride:request-accepted', {
                     rideId,
@@ -825,7 +1057,7 @@ export const initializeSocket = (server) => {
                         reason: reason || 'Customer declined your request'
                     });
                 } else {
-                    // Send notification if offline
+                    // Send notification if driver offline
                     try {
                         const driver = await User.findById(driverUserId).select('fcmToken isSendNotification');
                         if (driver && driver.fcmToken && driver.isSendNotification) {
@@ -834,6 +1066,7 @@ export const initializeSocket = (server) => {
                                 title: 'Request Declined',
                                 body: reason || 'Customer declined your ride request'
                             });
+                            console.log(`Sent decline notification to offline driver ${driverUserId}`);
                         }
                     } catch (notifError) {
                         console.error('Error sending notification:', notifError);
@@ -974,6 +1207,25 @@ export const initializeSocket = (server) => {
                     ride: updatedRide
                 });
 
+                // Notify customer who booked the ride about fare update
+                const customerId = updatedRide.bookedBy._id?.toString() || updatedRide.bookedBy.toString();
+                const customerSocketId = activeConnections.get(customerId);
+                if (!customerSocketId) {
+                    try {
+                        const customer = await Customer.findById(customerId).select('fcmToken');
+                        if (customer && customer.fcmToken) {
+                            await generalNotification({
+                                userarray: [customer.fcmToken],
+                                title: 'Ride Fare Updated',
+                                body: `Your ride fare from ${updatedRide.from} to ${updatedRide.to} has been updated to ₹${updatedRide.fare}`
+                            });
+                            console.log(`Sent fare update confirmation to offline customer ${customerId}`);
+                        }
+                    } catch (notifError) {
+                        console.error('Error sending customer fare update notification:', notifError);
+                    }
+                }
+
                 console.log(`Ride ${rideId} fare updated to ${newFare}`);
             } catch (error) {
                 socket.emit('error', { message: error.message });
@@ -1054,7 +1306,7 @@ export const initializeSocket = (server) => {
                     message: 'Ride cancelled by customer'
                 });
 
-                // Send notification to offline users
+                // Send notification to offline drivers who had requests
                 try {
                     const offlineUsers = await User.find({ 
                         isSendNotification: true,
@@ -1069,17 +1321,36 @@ export const initializeSocket = (server) => {
                         await generalNotification({
                             userarray: offlineTokens,
                             title: 'Ride Cancelled',
-                            body: `Ride from ${cancelledRide.from} to ${cancelledRide.to} has been cancelled`
+                            body: `Ride from ${cancelledRide.from} to ${cancelledRide.to} has been cancelled by customer`
                         });
+                        console.log(`Sent cancellation notification to ${offlineTokens.length} offline drivers`);
                     }
                 } catch (notifError) {
-                    console.error('Error sending notification:', notifError);
+                    console.error('Error sending notification to drivers:', notifError);
                 }
 
                 socket.emit('ride:cancel-success', {
                     success: true,
                     ride: cancelledRide
                 });
+
+                // Send cancellation confirmation to customer (if offline)
+                const customerSocketId = activeConnections.get(customerId);
+                if (!customerSocketId) {
+                    try {
+                        const customer = await Customer.findById(customerId).select('fcmToken');
+                        if (customer && customer.fcmToken) {
+                            await generalNotification({
+                                userarray: [customer.fcmToken],
+                                title: 'Ride Cancelled',
+                                body: `Your ride from ${cancelledRide.from} to ${cancelledRide.to} has been cancelled successfully`
+                            });
+                            console.log(`Sent cancellation confirmation to offline customer ${customerId}`);
+                        }
+                    } catch (notifError) {
+                        console.error('Error sending customer cancellation notification:', notifError);
+                    }
+                }
 
                 // Clean up
                 rideCustomerMap.delete(rideId);
@@ -1154,6 +1425,21 @@ export const initializeSocket = (server) => {
                         message: 'Driver has started the ride',
                         driverId
                     });
+                } else {
+                    // Send FCM notification to customer if offline
+                    try {
+                        const customer = await Customer.findById(customerId).select('fcmToken');
+                        if (customer && customer.fcmToken) {
+                            await generalNotification({
+                                userarray: [customer.fcmToken],
+                                title: 'Ride Started!',
+                                body: `Your driver has started the ride from ${ride.from} to ${ride.to}`
+                            });
+                            console.log(`Sent ride start notification to offline customer ${customerId}`);
+                        }
+                    } catch (notifError) {
+                        console.error('Error sending customer notification:', notifError);
+                    }
                 }
 
                 // Broadcast to ride room
@@ -1209,12 +1495,33 @@ export const initializeSocket = (server) => {
             try {
                 const completedRide = await updateRideStatus(rideId, 'COMPLETED');
 
+                // Get customer ID for notification
+                const customerId = completedRide.bookedBy._id?.toString() || completedRide.bookedBy.toString();
+                const customerSocketId = activeConnections.get(customerId);
+
                 // Notify customer
                 io.to(`ride:${rideId}`).emit('ride:completed', {
                     rideId,
                     status: 'COMPLETED',
                     message: 'Ride has been completed'
                 });
+
+                // Send FCM notification to customer if offline
+                if (!customerSocketId) {
+                    try {
+                        const customer = await Customer.findById(customerId).select('fcmToken');
+                        if (customer && customer.fcmToken) {
+                            await generalNotification({
+                                userarray: [customer.fcmToken],
+                                title: 'Ride Completed!',
+                                body: `Your ride from ${completedRide.from} to ${completedRide.to} has been completed successfully`
+                            });
+                            console.log(`Sent ride completion notification to offline customer ${customerId}`);
+                        }
+                    } catch (notifError) {
+                        console.error('Error sending customer notification:', notifError);
+                    }
+                }
 
                 // Broadcast status update to all owners
                 io.to('rides:all').emit('ride:updated', {
@@ -1447,4 +1754,4 @@ export const getActiveConnections = () => activeConnections;
  */
 export const getRideTimeouts = () => rideTimeouts;
 
-export default { initializeSocket, getActiveConnections, getRideTimeouts };
+export default { initializeSocket, getActiveConnections, getRideTimeouts, scheduleQuickrideRequestAutoDecline };

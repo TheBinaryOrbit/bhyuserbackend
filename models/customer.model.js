@@ -1,6 +1,12 @@
 import mongoose from "mongoose";
 
 const CustomerSchema = new mongoose.Schema({
+    title : {
+        type: String,
+        trim: true,
+        maxlength: 10,
+        enum: ['Mr.', 'Ms.', 'Mrs.']
+    },
     name: {
         type: String,
         required: true,

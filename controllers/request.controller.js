@@ -23,6 +23,8 @@ import {
     declineTimedOutRequests
 } from '../service/request.service.js';
 import { sendSuccess, sendError } from '../utils/responseHelper.js';
+import { Ride } from '../models/rides.js';
+import { getActiveConnections, scheduleQuickrideRequestAutoDecline } from '../config/socket.config.js';
 
 /**
  * Create a new request
@@ -31,6 +33,35 @@ export const createRequestController = async (req, res) => {
     try {
         const requestData = req.body;
         const request = await createRequest(requestData);
+
+        // Reuse existing Socket.IO instance and active connection map.
+        const io = req.app.get('io');
+        const activeConnections = getActiveConnections();
+
+        if (io && activeConnections) {
+            const ride = await Ride.findById(requestData.requestedFor).select('bookedBy rideType from to');
+            const customerId = ride?.bookedBy?.toString();
+
+            if (customerId) {
+                const customerSocketId = activeConnections.get(customerId);
+                if (customerSocketId) {
+                    io.to(customerSocketId).emit('request:new', {
+                        fare: request.fare,
+                        request: request,
+                        message: 'New request received for your ride'
+                    });
+                }
+            }
+
+            // Reuse shared QUICKRIDE request auto-decline logic from socket config.
+            scheduleQuickrideRequestAutoDecline({
+                io,
+                request,
+                requestData,
+                ride,
+                customerId
+            });
+        }
 
         sendSuccess(res, 201, 'Request created successfully', { request });
     } catch (error) {

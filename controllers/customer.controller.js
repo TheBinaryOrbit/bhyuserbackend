@@ -86,12 +86,18 @@ export const verifyOTP = async (req, res) => {
 };
 
 
+const VALID_TITLES = ['Mr.', 'Ms.', 'Mrs.'];
+
 export const createUser = async (req, res) => {
     try {
-        const { name, phoneNumber } = req.body;
+        const { title, name, phoneNumber , fcmToken } = req.body;
 
         if (!name || !phoneNumber) {
             return res.status(400).json({ error: "All fields (name, phoneNumber) are required." });
+        }
+
+        if (title && !VALID_TITLES.includes(title)) {
+            return res.status(400).json({ error: `Invalid title. Must be one of: ${VALID_TITLES.join(', ')}` });
         }
 
         // Second check - just before creating (race condition safety)
@@ -101,15 +107,19 @@ export const createUser = async (req, res) => {
         }
 
         const newUser = await Customer.create({
+            title,
             name,
-            phoneNumber
+            phoneNumber,
+            fcmToken
         });
         return res.status(201).json({
             message: "Customer created successfully.",
             customer: {
                 id: newUser._id,
+                title: newUser.title,
                 name: newUser.name,
                 phoneNumber: newUser.phoneNumber,
+                fcmToken: newUser.fcmToken,
                 token: generateToken({ id: newUser._id, phoneNumber: newUser.phoneNumber })
             }
         });
@@ -123,6 +133,49 @@ export const createUser = async (req, res) => {
         // Catch duplicate key error from MongoDB in case two parallel requests slip past checks
         if (error.code === 11000 && error.keyValue?.phoneNumber) {
             return res.status(409).json({ error: "Phone number already registered" });
+        }
+
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+
+export const updateCustomer = async (req, res) => {
+    try {
+        const { customerId } = req.params;
+        const { title, name, email } = req.body;
+
+        if (title && !VALID_TITLES.includes(title)) {
+            return res.status(400).json({ error: `Invalid title. Must be one of: ${VALID_TITLES.join(', ')}` });
+        }
+
+        const updateFields = {};
+        if (title !== undefined) updateFields.title = title;
+        if (name  !== undefined) updateFields.name  = name;
+        if (email !== undefined) updateFields.email = email;
+
+        if (Object.keys(updateFields).length === 0) {
+            return res.status(400).json({ error: "No valid fields provided for update." });
+        }
+
+        const updatedCustomer = await Customer.findByIdAndUpdate(
+            customerId,
+            { $set: updateFields },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedCustomer) {
+            return res.status(404).json({ error: "Customer not found." });
+        }
+
+        return res.status(200).json({
+            message: "Customer updated successfully.",
+            customer: updatedCustomer
+        });
+    } catch (error) {
+        console.error("updateCustomer Error:", error);
+
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ error: error.message });
         }
 
         return res.status(500).json({ error: "Internal Server Error" });
