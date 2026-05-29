@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { calculateDistanceFromAddresses } from '../utils/googleMaps.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,18 +70,34 @@ export const getVehicleTypeById = (req, res) => {
 };
 
 /**
- * Calculate fare estimate for a ride
+ * Calculate fare estimate for a ride for all vehicle types
  * @route POST /api/vehicles/calculate-fare
  * @access Public
  */
-export const calculateFare = (req, res) => {
+export const calculateFare = async (req, res) => {
     try {
-        const { vehicleTypeId, distanceKm, durationMinutes } = req.body;
+        let { distanceKm, durationMinutes, origin, destination } = req.body;
 
-        if (!vehicleTypeId || !distanceKm || !durationMinutes) {
+        // If origin and destination are provided, calculate distance and duration using Google Maps
+        if (origin && destination && (!distanceKm || !durationMinutes)) {
+            try {
+                const distanceData = await calculateDistanceFromAddresses(origin, destination);
+                distanceKm = distanceData.distanceKm;
+                // Convert duration from seconds to minutes and round up
+                durationMinutes = Math.ceil(distanceData.durationSeconds / 60);
+            } catch (mapsError) {
+                console.error('Google Maps calculation failed:', mapsError);
+                return res.status(400).json({
+                    success: false,
+                    message: `Failed to calculate distance between locations: ${mapsError.message}`
+                });
+            }
+        }
+
+        if (distanceKm === undefined || durationMinutes === undefined) {
             return res.status(400).json({
                 success: false,
-                message: 'vehicleTypeId, distanceKm, and durationMinutes are required'
+                message: 'distanceKm and durationMinutes (or origin and destination) are required'
             });
         }
 
@@ -88,34 +105,39 @@ export const calculateFare = (req, res) => {
         const vehicleTypesData = fs.readFileSync(vehicleTypesPath, 'utf8');
         const vehicleTypes = JSON.parse(vehicleTypesData);
 
-        const vehicleType = vehicleTypes.vehicleTypes.find(v => v.id === vehicleTypeId);
+        const estimates = vehicleTypes.vehicleTypes.map(vehicleType => {
+            const distanceFare = distanceKm * vehicleType.ratePerKm;
+            const timeFare = durationMinutes * vehicleType.ratePerMinute;
+            const totalFare = vehicleType.baseFare + distanceFare + timeFare;
 
-        if (!vehicleType) {
-            return res.status(404).json({
-                success: false,
-                message: `Vehicle type '${vehicleTypeId}' not found`
-            });
-        }
-
-        const distanceFare = distanceKm * vehicleType.ratePerKm;
-        const timeFare = durationMinutes * vehicleType.ratePerMinute;
-        const totalFare = vehicleType.baseFare + distanceFare + timeFare;
-
-        res.status(200).json({
-            success: true,
-            data: {
-                vehicleType: vehicleType.name,
+            return {
+                vehicleTypeId: vehicleType.id,
+                vehicleTypeName: vehicleType.name,
+                capacity: vehicleType.capacity,
+                distance: `${parseFloat(distanceKm).toFixed(2)} km`,
+                duration: `${Math.ceil(durationMinutes)} min`,
+                distanceKm: parseFloat(distanceKm.toFixed(2)),
+                durationMinutes: Math.ceil(durationMinutes),
                 baseFare: vehicleType.baseFare,
                 distanceFare: parseFloat(distanceFare.toFixed(2)),
                 timeFare: parseFloat(timeFare.toFixed(2)),
                 totalFare: parseFloat(totalFare.toFixed(2)),
                 breakdown: {
-                    distance: `${distanceKm} km × ₹${vehicleType.ratePerKm}/km = ₹${distanceFare.toFixed(2)}`,
-                    time: `${durationMinutes} min × ₹${vehicleType.ratePerMinute}/min = ₹${timeFare.toFixed(2)}`,
+                    distance: `${parseFloat(distanceKm).toFixed(2)} km × ₹${vehicleType.ratePerKm}/km = ₹${distanceFare.toFixed(2)}`,
+                    time: `${Math.ceil(durationMinutes)} min × ₹${vehicleType.ratePerMinute}/min = ₹${timeFare.toFixed(2)}`,
                     base: `Base Fare = ₹${vehicleType.baseFare}`
                 }
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: estimates,
+            distanceInfo: {
+                distanceKm: parseFloat(distanceKm.toFixed(2)),
+                durationMinutes: Math.ceil(durationMinutes)
             },
-            message: 'Fare calculated successfully'
+            message: 'Fare calculated successfully for all vehicle types'
         });
     } catch (error) {
         console.error('Error calculating fare:', error);
