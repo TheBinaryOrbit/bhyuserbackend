@@ -8,6 +8,7 @@ import rideRouter from './router/ride.router.js';
 import customerRouter from './router/customer.router.js';
 import quickrideRouter from './router/quickride.router.js';
 import vehicleRouter from './router/vehicle.router.js';
+import userRouter from './router/user.router.js';
 import { declineTimedOutRequests } from './service/request.service.js';
 
 // Import models to register schemas (must be done before any database operations)
@@ -44,11 +45,15 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve static files from uploads folder
+app.use('/uploads', express.static('uploads'));
+
 // API Routes
 app.use('/api', rideRouter);
 app.use('/api/customer', customerRouter);
 app.use('/api/quickride', quickrideRouter);
 app.use('/api/vehicles', vehicleRouter);
+app.use('/api/user', userRouter);
 
 // Health check route
 app.get('/health', (req, res) => {

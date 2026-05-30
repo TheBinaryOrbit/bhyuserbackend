@@ -59,6 +59,12 @@ const UserSchema = new mongoose.Schema({
     default: "/userimages/default.png"
   },
 
+  profilePicture: {
+    type: String,
+    trim: true,
+    default: "/uploads/default-profile.png"
+  },
+
   // Verification details
   isSubscribed: {
     type: Boolean,
