@@ -74,6 +74,7 @@ export const verifyOTP = async (req, res) => {
         userStatus: 200,
         user: {
             id: customer._id,
+            title: customer.title,
             name: customer.name,
             phoneNumber: customer.phoneNumber,
             token: generateToken({ id: customer._id, phoneNumber: customer.phoneNumber })
