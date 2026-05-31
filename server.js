@@ -9,6 +9,7 @@ import customerRouter from './router/customer.router.js';
 import quickrideRouter from './router/quickride.router.js';
 import vehicleRouter from './router/vehicle.router.js';
 import userRouter from './router/user.router.js';
+import appContentRouter from './router/appContent.router.js';
 import { declineTimedOutRequests } from './service/request.service.js';
 
 // Import models to register schemas (must be done before any database operations)
@@ -18,6 +19,7 @@ import './models/vehicle.model.js';
 import './models/customer.model.js';
 import './models/rides.js';
 import './models/requests.model.js';
+import './models/appContent.model.js';
 
 // Load environment variables
 dotenv.config();
@@ -54,6 +56,7 @@ app.use('/api/customer', customerRouter);
 app.use('/api/quickride', quickrideRouter);
 app.use('/api/vehicles', vehicleRouter);
 app.use('/api/user', userRouter);
+app.use('/api/app-content', appContentRouter);
 
 // Health check route
 app.get('/health', (req, res) => {
