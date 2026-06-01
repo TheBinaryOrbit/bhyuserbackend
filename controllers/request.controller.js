@@ -42,12 +42,21 @@ export const createRequestController = async (req, res) => {
             const ride = await Ride.findById(requestData.requestedFor).select('bookedBy rideType from to');
             const customerId = ride?.bookedBy?.toString();
 
+            // Fetch completed rides count for the specific driver assigned in this request
+            const completedRidesCount = await Ride.countDocuments({
+                assingTo: request.driver,
+                rideStatus: 'COMPLETED'
+            });
+
             if (customerId) {
                 const customerSocketId = activeConnections.get(customerId);
                 if (customerSocketId) {
                     io.to(customerSocketId).emit('request:new', {
                         fare: request.fare,
-                        request: request,
+                        request: {
+                            ...request.toJSON(),
+                            completedRidesCount: completedRidesCount
+                        },
                         message: 'New request received for your ride'
                     });
                 }

@@ -267,9 +267,18 @@ export const initializeSocket = (server) => {
                         const activePendingRequests = pendingRequests.filter(req => req.requestStatus === 'PENDING');
                         
                         for (const request of activePendingRequests) {
+                            // Fetch completed rides count for the specific driver in the request
+                            const completedRidesCount = await Ride.countDocuments({
+                                assingTo: request.driver?._id || request.driver,
+                                rideStatus: 'COMPLETED'
+                            });
+
                             socket.emit('request:new', {
                                 fare: request.fare,
-                                request: request,
+                                request: {
+                                    ...request.toJSON(),
+                                    completedRidesCount: completedRidesCount
+                                },
                                 message: 'Pending request from reconnection'
                             });
                             console.log(`Sent pending request ${request._id} to reconnected customer ${customerId} for ride ${ride._id}`);
@@ -822,6 +831,12 @@ export const initializeSocket = (server) => {
 
                 const request = await createRequest(requestData);
 
+                // Fetch completed rides count for the specific driver in the request
+                const completedRidesCount = await Ride.countDocuments({
+                    assingTo: request.driver?._id || request.driver,
+                    rideStatus: 'COMPLETED'
+                });
+
                 // Notify customer about new request
                 const customerId = rideCustomerMap.get(requestData.requestedFor) || ride?.bookedBy?._id?.toString() || ride?.bookedBy?.toString();
                 if (customerId) {
@@ -829,7 +844,10 @@ export const initializeSocket = (server) => {
                     if (customerSocketId) {
                         io.to(customerSocketId).emit('request:new', {
                             fare : request.fare,
-                            request : request,
+                            request: {
+                                ...request.toJSON(),
+                                completedRidesCount: completedRidesCount
+                            },
                             message: 'New request received for your ride'
                         });
                     } else {
