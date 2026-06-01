@@ -63,6 +63,9 @@ export const updateQuickRideController = async (req, res) => {
         const quickRide = await updateQuickRide(id, updateData);
         return sendSuccess(res, 200, 'Quick ride updated successfully', quickRide);
     } catch (error) {
+        if (error.message.includes('E11000') || error.message.includes('duplicate key')) {
+            return sendError(res, 400, 'A quick ride with this tag already exists for this user');
+        }
         return sendError(res, 500, error.message);
     }
 };
