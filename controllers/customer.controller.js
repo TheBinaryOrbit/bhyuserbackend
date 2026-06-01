@@ -45,7 +45,9 @@ export const verifyOTP = async (req, res) => {
 
         const OTPStatus = await verifyOTPWithPhoneNumber(phoneNumber, OTP, sessionId);
 
-        if(!OTPStatus.status) {
+        console.log("Verify OTP Status:", OTPStatus);
+
+        if(!OTPStatus) {
             return res.status(401).json({ error: "Invalid OTP." });
         }
         
