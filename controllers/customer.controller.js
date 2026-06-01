@@ -10,17 +10,17 @@ export const GetOTP = async (req, res) => {
             return res.status(400).json({ error: "Phone number is required." });
         }
 
-        // const OTPStatus = await sendOTP(phoneNumber);
+        const OTPStatus = await sendOTP(phoneNumber);
 
-        // console.log("OTP Status:", OTPStatus);
+        console.log("OTP Status:", OTPStatus);
 
-        // if (!OTPStatus.status) {
-        //     return res.status(503).json({ error: "Failed to send OTP. Service unavailable." });
-        // }
+        if (!OTPStatus.status) {
+            return res.status(503).json({ error: "Failed to send OTP. Service unavailable." });
+        }
 
         return res.status(200).json({
             message: "OTP sent successfully.",
-            sessionId: "mock-session-id", // Replace with real sessionId if using a service
+            sessionId: OTPStatus.sessionId, // Replace with real sessionId if using a service
         });
     } catch (error) {
         console.error("GetOTP Error:", error);
@@ -72,6 +72,9 @@ export const verifyOTP = async (req, res) => {
 
         const OTPStatus = await verifyOTPWithPhoneNumber(phoneNumber, OTP, sessionId);
 
+        if(!OTPStatus.status) {
+            return res.status(401).json({ error: "Invalid OTP." });
+        }
         
 
         const customer = await Customer.findOne({ phoneNumber: phoneNumber });
