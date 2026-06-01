@@ -38,6 +38,8 @@ export const verifyOTPWithPhoneNumber = async (phoneNumber, OTP, sessionId) => {
     if( phoneNumber == '6203821043' && OTP == '123456' ) {
       return true; // For testing purposes, bypass OTP verification
     }
+
+    console.log(`Verifying OTP for ${phoneNumber} with sessionId ${sessionId} and OTP ${OTP}`);
     const response = await axios.get(`https://2factor.in/API/V1/${API_KEY}/SMS/VERIFY/${sessionId}/${OTP}`);
     const { Status, Details } = response.data;
 
