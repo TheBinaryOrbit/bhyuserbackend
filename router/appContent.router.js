@@ -5,6 +5,6 @@ const router = express.Router();
 
 router.get("/", getAllAppContents);
 router.get("/:type", getAppContent);
-router.post("/", upsertAppContent); // For setting initial data or updating
+router.post("/", upsertAppContent);
 
 export default router;
