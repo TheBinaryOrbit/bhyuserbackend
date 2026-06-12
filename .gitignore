@@ -2,7 +2,6 @@
 node_modules/
 
 # Environment variables
-.env
 
 # Logs
 logs
@@ -25,3 +24,4 @@ Thumbs.db
 # Build
 dist/
 build/
+config.bat

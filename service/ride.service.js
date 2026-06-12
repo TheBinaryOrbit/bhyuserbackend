@@ -36,7 +36,8 @@ export const determineRideType = (distance) => {
 };
 
 /**
- * Find nearby online users/drivers
+ * Find nearby online users/drivers who are completely free
+ * Rules: Excludes drivers tied to 'PENDING', 'ACCEPTED', or 'ONGOING' rides.
  * @param {Number} latitude - Customer latitude
  * @param {Number} longitude - Customer longitude
  * @param {Number} radiusKm - Search radius in kilometers
@@ -45,7 +46,17 @@ export const determineRideType = (distance) => {
  */
 export const findNearbyOnlineUsers = async (latitude, longitude, radiusKm = 10, vehicleType = null) => {
     try {
+        // 1. Fetch all drivers currently assigned to active rides
+        const busyRides = await Ride.find({
+            rideStatus: { $in: ['PENDING', 'ACCEPTED', 'ONGOING'] },
+            assingTo: { $ne: null }
+        }).select('assingTo');
+
+        const busyDriverIds = busyRides.map(ride => ride.assingTo.toString());
+
+        // 2. Fetch all online users
         const users = await User.find({
+            isOnline: true,
             'lastLocation.latitude': { $ne: null },
             'lastLocation.longitude': { $ne: null }
         })
@@ -61,6 +72,19 @@ export const findNearbyOnlineUsers = async (latitude, longitude, radiusKm = 10, 
 
             if (!hasLastLocation) {
                 continue;
+            }
+
+            // 3. Filter out users if their drivers are busy
+            // (Assuming user's drivers are populated or accessible via user.availableDrivers)
+            if (user.availableDrivers && user.availableDrivers.length > 0) {
+                const hasFreeDriver = user.availableDrivers.some(
+                    driver => !busyDriverIds.includes(driver._id.toString())
+                );
+                
+                // If all drivers for this user are busy, skip notifying this user
+                if (!hasFreeDriver) {
+                    continue;
+                }
             }
 
             const userLat = Number(user.lastLocation.latitude);
@@ -99,7 +123,7 @@ export const findNearbyOnlineUsers = async (latitude, longitude, radiusKm = 10, 
             return sortedWithinRadius;
         }
 
-        console.log(`No users found in ${radiusKm}km radius. Falling back to all users by lastLocation distance.`);
+        console.log(`No completely free users found in ${radiusKm}km radius. Falling back by lastLocation distance.`);
 
         return usersWithDistance
             .sort((a, b) => a.distanceKm - b.distanceKm)
@@ -117,7 +141,6 @@ export const findNearbyOnlineUsers = async (latitude, longitude, radiusKm = 10, 
  */
 export const createRide = async (rideData, customerLocation = null) => {
     try {
-        // Calculate distance from Google Maps API if from and to addresses are provided
         if (rideData.from && rideData.to) {
             try {
                 const distanceInfo = await calculateDistanceFromAddresses(rideData.from, rideData.to);
@@ -126,14 +149,11 @@ export const createRide = async (rideData, customerLocation = null) => {
                 console.log(`Distance calculated: ${distanceInfo.distanceKm} km (${distanceInfo.durationText})`);
             } catch (distanceError) {
                 console.error('Error calculating distance:', distanceError.message);
-                // Continue with ride creation even if distance calculation fails
-                // Use default value if not provided
                 rideData.estimatedDistance = rideData.estimatedDistance || 0;
                 rideData.estimatedDuration = rideData.estimatedDuration || 0;
             }
         }
 
-        // Auto-determine ride type based on calculated distance
         if (rideData.estimatedDistance) {
             rideData.rideType = determineRideType(rideData.estimatedDistance);
         }
@@ -145,30 +165,26 @@ export const createRide = async (rideData, customerLocation = null) => {
         
         const populatedRide = await ride.populate('bookedBy');
 
-        // Determine search parameters based on ride type
-        let radiusKm = 10; // Default for QUICKRIDE
-        let timeout = 300000; // 5 minutes for QUICKRIDE (changed from 3 minutes)
+        let radiusKm = 10;
+        let timeout = 300000;
         
         if (rideData.rideType === 'QUICKRIDE') {
             radiusKm = parseFloat(process.env.QUICKRIDE_SEARCH_RADIUS_KM || 10);
-            timeout = parseInt(process.env.QUICKRIDE_TIMEOUT_MS || 300000); // 5 minutes default
+            timeout = parseInt(process.env.QUICKRIDE_TIMEOUT_MS || 300000);
             
-            // Set expiresAt timestamp for quickrides
             const expiresAt = new Date(Date.now() + timeout);
             await Ride.findByIdAndUpdate(ride._id, { expiresAt });
         } else if (rideData.rideType === 'OUTSTATION') {
             radiusKm = parseFloat(process.env.OUTSTATION_SEARCH_RADIUS_KM || 100);
-            timeout = 0; // No timeout for OUTSTATION
+            timeout = 0;
         }
 
-        // Find nearby online drivers based on ride type
         let nearbyDrivers = [];
         if (customerLocation) {
             nearbyDrivers = await findNearbyOnlineUsers(
                 customerLocation.latitude,
                 customerLocation.longitude,
-                radiusKm,
-                rideData.vehicleType
+                radiusKm
             );
         }
 
@@ -190,20 +206,17 @@ export const createRide = async (rideData, customerLocation = null) => {
  */
 export const getRideById = async (rideId) => {
     try {
-        // select startOtp and startOtpExpiresAt for verification if needed
         const ride = await Ride.findById(rideId).select('+startOtp +startOtpExpiresAt').populate('bookedBy').populate('assingTo');
         
         if (!ride) {
             throw new Error('Ride not found');
         }
         
-        // Get vehicle information from the accepted request
         const acceptedRequest = await Request.findOne({ 
             requestedFor: rideId, 
             requestStatus: 'APPROVED' 
         }).populate('vehicle').populate('driver');
         
-        // Add vehicle and driver info to ride object if request exists
         const rideObject = ride.toObject();
         if (acceptedRequest) {
             rideObject.vehicle = acceptedRequest.vehicle;
@@ -346,14 +359,12 @@ export const getRidesByDriver = async (driverId) => {
  */
 export const getRidesByUser = async (userId) => {
     try {
-        // Find the first driver for this user
         const driver = await Driver.findOne({ userId: userId });
         
         if (!driver) {
             throw new Error('No driver found for this user');
         }
 
-        // Get all rides assigned to this driver
         const rides = await Ride.find({ assingTo: driver._id })
             .populate('bookedBy')
             .populate('assingTo')
@@ -474,7 +485,6 @@ export const cancelRide = async (rideId) => {
         ride.rideStatus = 'CANCELLED';
         await ride.save();
         
-        // Decline all pending and approved requests associated with this ride
         const declineResult = await Request.updateMany(
             { 
                 requestedFor: rideId,
@@ -517,7 +527,6 @@ export const completeRide = async (rideId) => {
         ride.rideStatus = 'COMPLETED';
         await ride.save();
         
-        // Mark the approved request as completed
         await Request.updateMany(
             { 
                 requestedFor: rideId, 
@@ -542,7 +551,6 @@ export const completeRide = async (rideId) => {
  */
 export const startRide = async (rideId, otp) => {
     try {
-        // Fetch ride with OTP fields (they are select: false by default)
         const ride = await Ride.findById(rideId).select('+startOtp +startOtpExpiresAt');
         
         if (!ride) {
@@ -553,7 +561,6 @@ export const startRide = async (rideId, otp) => {
             throw new Error('Only accepted rides can be started');
         }
         
-        // Verify OTP
         if (!ride.startOtp) {
             throw new Error('No OTP generated for this ride');
         }
@@ -570,11 +577,7 @@ export const startRide = async (rideId, otp) => {
             throw new Error('OTP has expired');
         }
         
-        // OTP verified, start the ride
         ride.rideStatus = 'ONGOING';
-        
-        // Clear OTP after successful verification
-        // ride.startOtp = undefined;
         ride.startOtpExpiresAt = undefined;
         
         await ride.save();
@@ -744,7 +747,7 @@ export const getActiveRidesForTimeout = async () => {
     try {
         const rides = await Ride.find({
             rideStatus: 'PENDING',
-            pickUpDateTime: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Last 24 hours
+            pickUpDateTime: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
         })
             .populate('bookedBy')
             .sort({ pickUpDateTime: 1 });
@@ -813,7 +816,6 @@ export const getRecentRideLocations = async (customerId) => {
             .sort({ pickUpDateTime: -1 })
             .limit(5);
         
-        // Map to return only to and from locations
         const locations = rides.map(ride => ({
             to: ride.to,
             from: ride.from
@@ -827,40 +829,24 @@ export const getRecentRideLocations = async (customerId) => {
 
 /**
  * Check if a driver can accept a new ride based on their current accepted rides
- * Rules:
- * - If driver has an ACCEPTED/ONGOING QUICKRIDE: Cannot accept ANY new rides
- * - If driver has an ACCEPTED/ONGOING OUTSTATION: block starts 3 hours before pickup and continues until ride completion
- * - If OUTSTATION block window has not started yet: all ride types are available
- * 
- * @param {String} driverId - The driver ID
- * @param {Object} newRide - The new ride object {rideType, pickUpDateTime}
- * @returns {Promise<Object>} { available: boolean, reason: string }
  */
 export const checkDriverAvailability = async (driverId, newRide) => {
     try {
-        // Get all accepted or ongoing rides for this driver
         const activeRides = await Ride.find({
             assingTo: driverId,
-            rideStatus: { $in: ['ACCEPTED', 'ONGOING'] }
+            rideStatus: { $in: ['PENDING', 'ACCEPTED', 'ONGOING'] }
         }).select('rideType pickUpDateTime rideStatus');
 
         console.log(`[Availability] Checking driver ${driverId} - Found ${activeRides.length} active rides`);
-        activeRides.forEach(r => {
-            console.log(`  - Active ride: ${r.rideType} scheduled for ${r.pickUpDateTime} (Status: ${r.rideStatus})`);
-        });
 
-        // If no active rides, driver is available
         if (activeRides.length === 0) {
-            console.log(`[Availability] Driver ${driverId} is AVAILABLE (no active rides)`);
             return { available: true, reason: null };
         }
 
-        // Check all active rides
         const now = new Date();
         const threeHoursInMs = 3 * 60 * 60 * 1000;
         const nowMs = now.getTime();
 
-        // Rule 1: If driver has an active QUICKRIDE, they cannot accept ANY new rides
         const hasActiveQuickRide = activeRides.some((ride) => ride.rideType === 'QUICKRIDE');
         if (hasActiveQuickRide) {
             return {
@@ -869,35 +855,25 @@ export const checkDriverAvailability = async (driverId, newRide) => {
             };
         }
 
-        // Rule 2: Evaluate ALL active OUTSTATION rides.
-        // If current time is inside block window of any outstation ride,
-        // block new rides for the driver.
         const outstationRides = activeRides.filter((ride) => ride.rideType === 'OUTSTATION');
-        console.log(`[Availability] Found ${outstationRides.length} OUTSTATION rides for driver ${driverId}`);
         
         const isBlockedByAnyOutstation = outstationRides.some((outstationRide) => {
             const outstationPickUp = new Date(outstationRide.pickUpDateTime);
             if (Number.isNaN(outstationPickUp.getTime())) {
-                console.log(`[Availability] Invalid date for OUTSTATION ride: ${outstationRide.pickUpDateTime}`);
                 return false;
             }
 
             const blockStartTime = outstationPickUp.getTime() - threeHoursInMs;
-            const isInBlock = nowMs >= blockStartTime;
-            console.log(`[Availability] OUTSTATION ride at ${outstationPickUp} | Block starts at ${new Date(blockStartTime)} | Now ${now} | In block: ${isInBlock}`);
-            return isInBlock;
+            return nowMs >= blockStartTime;
         });
 
         if (isBlockedByAnyOutstation) {
-            console.log(`[Availability] Driver ${driverId} is BLOCKED (OUTSTATION within 3-hour window)`);
             return {
                 available: false,
                 reason: 'Driver has an OUTSTATION ride and cannot accept new rides from 3 hours before pickup until completion'
             };
         }
 
-        // If we passed all checks, driver is available
-        console.log(`[Availability] Driver ${driverId} is AVAILABLE (passed all checks)`);
         return { available: true, reason: null };
     } catch (error) {
         throw new Error(`Error checking driver availability: ${error.message}`);
@@ -906,13 +882,9 @@ export const checkDriverAvailability = async (driverId, newRide) => {
 
 /**
  * Check if a user (owner) can accept a new ride for ANY of their drivers
- * @param {String} userId - The user ID
- * @param {Object} newRide - The new ride object {rideType, pickUpDateTime}
- * @returns {Promise<Object>} { available: boolean, reason: string, availableDrivers: Array }
  */
 export const checkUserDriversAvailability = async (userId, newRide) => {
     try {
-        // Get all drivers for this user
         const { Driver } = await import('../models/driver.model.js');
         const drivers = await Driver.find({ userId: userId });
 
@@ -924,7 +896,22 @@ export const checkUserDriversAvailability = async (userId, newRide) => {
             };
         }
 
-        // Check availability for each driver
+        // Do not notify owners who already have a ride in progress.
+        // If ANY of this owner's drivers is on an ONGOING ride, the owner is unavailable.
+        const driverIds = drivers.map((driver) => driver._id);
+        const ongoingRide = await Ride.findOne({
+            assingTo: { $in: driverIds },
+            rideStatus: 'ONGOING'
+        }).select('_id');
+
+        if (ongoingRide) {
+            return {
+                available: false,
+                reason: 'Owner already has a ride in progress',
+                availableDrivers: []
+            };
+        }
+
         const availableDrivers = [];
         for (const driver of drivers) {
             const availability = await checkDriverAvailability(driver._id.toString(), newRide);
