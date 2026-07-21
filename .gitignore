@@ -2,7 +2,6 @@
 node_modules/
 
 # Environment variables
-.env
 
 # Logs
 logs
@@ -16,7 +15,6 @@ yarn-error.log*
 Thumbs.db
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -25,3 +23,4 @@ Thumbs.db
 # Build
 dist/
 build/
+config.bat
