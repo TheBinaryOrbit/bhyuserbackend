@@ -3,6 +3,7 @@ import { User } from "../models/user.model.js";
 import { Driver } from "../models/driver.model.js";
 import { Vehicle } from "../models/vehicle.model.js";
 import { Request } from "../models/requests.model.js";
+import { Customer } from "../models/customer.model.js";
 import { calculateDistanceFromAddresses } from "../utils/googleMaps.js";
 
 /**
@@ -141,6 +142,23 @@ export const findNearbyOnlineUsers = async (latitude, longitude, radiusKm = 10, 
  */
 export const createRide = async (rideData, customerLocation = null) => {
     try {
+        if (customerLocation?.latitude == null || customerLocation?.longitude == null) {
+            if (rideData.bookedBy) {
+                try {
+                    const customer = await Customer.findById(rideData.bookedBy).select('lastLocation');
+                    if (customer?.lastLocation?.latitude != null && customer?.lastLocation?.longitude != null) {
+                        customerLocation = {
+                            latitude: customer.lastLocation.latitude,
+                            longitude: customer.lastLocation.longitude
+                        };
+                        console.log(`Using customer's last saved location for ride search: ${customerLocation.latitude}, ${customerLocation.longitude}`);
+                    }
+                } catch (customerLocationError) {
+                    console.error('Error fetching customer last location:', customerLocationError.message);
+                }
+            }
+        }
+
         if (rideData.from && rideData.to) {
             try {
                 const distanceInfo = await calculateDistanceFromAddresses(rideData.from, rideData.to);
@@ -192,7 +210,8 @@ export const createRide = async (rideData, customerLocation = null) => {
             ride: populatedRide,
             nearbyDrivers,
             timeout,
-            searchRadius: radiusKm
+            searchRadius: radiusKm,
+            customerLocation
         };
     } catch (error) {
         throw new Error(`Error creating ride: ${error.message}`);

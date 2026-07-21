@@ -473,15 +473,15 @@ export const initializeSocket = (server) => {
         // Customer creates a new ride
         socket.on('ride:create', async (rideData) => {
             try {
-                const { customerLocation, ...rideInfo } = rideData;
+                const { customerLocation: payloadCustomerLocation, ...rideInfo } = rideData;
 
                 const estimatedDistance = rideData?.estimatedDistance || 0;
-                
+
                 // Ensure estimatedDistance is included in the ride info
                 rideInfo.estimatedDistance = estimatedDistance;
-                
-                const result = await createRide(rideInfo, customerLocation);
-                const { ride, nearbyDrivers, timeout, searchRadius } = result;
+
+                const result = await createRide(rideInfo, payloadCustomerLocation);
+                const { ride, nearbyDrivers, timeout, searchRadius, customerLocation } = result;
 
                 // Store ride-customer mapping  
                 rideCustomerMap.set(ride._id.toString(), rideData.bookedBy);
@@ -517,6 +517,8 @@ export const initializeSocket = (server) => {
                     rideStatus: ride.rideStatus,
                     estimatedDistance: ride.estimatedDistance || estimatedDistance,
                     isLater: ride.isLater,
+                    pickupLatitude: customerLocation?.latitude ?? null,
+                    pickupLongitude: customerLocation?.longitude ?? null,
                     bookedBy: ride.bookedBy ? {
                         _id: ride.bookedBy._id,
                         name: ride.bookedBy.name,
@@ -646,6 +648,8 @@ export const initializeSocket = (server) => {
                             body: `Pickup: ${ride.from} → ${ride.to}`,
                             to: String(ride.to ?? ''),
                             pickupLocation: String(ride.from ?? ''),
+                            pickupLatitude: String(customerLocation?.latitude ?? ''),
+                            pickupLongitude: String(customerLocation?.longitude ?? ''),
                             rideId: String(ride._id ?? ''),
                             pickUpDateTime: ride.pickUpDateTime ? new Date(ride.pickUpDateTime).toISOString() : '',
                             vehicleType: String(ride.vehicleType ?? ''),
