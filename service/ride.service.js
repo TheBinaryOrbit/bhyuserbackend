@@ -142,6 +142,7 @@ export const findNearbyOnlineUsers = async (latitude, longitude, radiusKm = 10, 
  */
 export const createRide = async (rideData, customerLocation = null) => {
     try {
+<<<<<<< HEAD
         if (customerLocation?.latitude == null || customerLocation?.longitude == null) {
             if (rideData.bookedBy) {
                 try {
@@ -159,6 +160,8 @@ export const createRide = async (rideData, customerLocation = null) => {
             }
         }
 
+=======
+>>>>>>> ae7a33c5b6b2651fa3c8097e1a2c340d66afbb59
         if (rideData.from && rideData.to) {
             try {
                 const distanceInfo = await calculateDistanceFromAddresses(rideData.from, rideData.to);
